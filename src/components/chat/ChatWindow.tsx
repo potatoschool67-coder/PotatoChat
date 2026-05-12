@@ -299,7 +299,7 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
       </div>
 
       <form onSubmit={sendMessage} className="p-4 relative">
-        <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} />
+        <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} />
         <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
           <input
             value={input}

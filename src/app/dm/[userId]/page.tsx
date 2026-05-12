@@ -468,7 +468,7 @@ export default function DMPage() {
               <Send size={20} />
             </button>
           </div>
-          <CommandAutocomplete onSelect={setInput} userId={currentUserId} />
+          <CommandAutocomplete onSelect={setInput} userId={user?.id} username={user?.username} />
         </form>
 
         <SettingsModal

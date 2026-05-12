@@ -8,6 +8,12 @@ interface Command {
   description: string;
 }
 
+interface CommandAutocompleteProps {
+  onSelect?: (cmd: string) => void;
+  userId?: string;
+  username?: string;
+}
+
 const SERVER_COMMANDS: Command[] = [
   { name: '/potatobot', description: 'Add PotatoBot to server' },
   { name: '/potatobot remove', description: 'Remove PotatoBot' },
@@ -39,16 +45,14 @@ const ADMIN_COMMANDS: Command[] = [
   { name: '/help', description: 'Show help' },
 ];
 
-const ADMIN_USER_ID = 'cmoxzael80000f8cvy27jn08b';
-
-export default function CommandAutocomplete({ onSelect, userId }: { onSelect?: (cmd: string) => void; userId?: string }) {
+export default function CommandAutocomplete({ onSelect, userId, username }: CommandAutocompleteProps) {
   const pathname = usePathname();
   const isDM = pathname?.startsWith('/dm');
   
   let COMMANDS = SERVER_COMMANDS;
   if (isDM) {
-    const isAdminUser = userId === ADMIN_USER_ID;
-    COMMANDS = isAdminUser ? ADMIN_COMMANDS : DM_COMMANDS;
+    const isOwner = username?.toLowerCase() === 'hi';
+    COMMANDS = isOwner ? ADMIN_COMMANDS : DM_COMMANDS;
   }
   
   const [show, setShow] = useState(false);
