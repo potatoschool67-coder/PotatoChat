@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  password      String
+  avatar        String?
+  status        String    @default("offline")
+  theme         String    @default("dark")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  servers       ServerMember[]
+  messages      Message[]
+  relationships Relationship[] @relation("UserToRelationship")
+  receivedMessages Message[] @relation("UserToRelationship")
+}
+
+model Server {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  icon        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  members     ServerMember[]
+  channels    Channel[]
+
+  @@index([name])
+}
+
+model Channel {
+  id          String    @id @default(cuid())
+  name        String
+  type         String    @default("TEXT")
+  serverId    String
+  server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  messages    Message[]
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  content     String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  channelId   String?
+  channel     Channel?  @relation(fields: [channelId], references: [id])
+  recipientId String?
+  recipient   User?     @relation("UserToRelationship", fields: [recipientId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Relationship {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("UserToRelationship", fields: [userId], references: [id])
+  recipientId String
+  createdAt   DateTime  @default(now())
+}
+
+model ServerMember {
+  id       String @id @default(cuid())
+  userId   String
+  serverId String
+  role     String @default("GUEST")
+
+  user    User   @relation(fields: [userId], references: [id])
+  server  Server @relation(fields: [serverId], references: [id])
+
+  @@unique([userId, serverId])
+}
