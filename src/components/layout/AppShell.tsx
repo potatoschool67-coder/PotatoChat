@@ -9,7 +9,7 @@ import ChannelModal from '@/components/modals/ChannelModal';
 import SettingsModal from '@/components/modals/SettingsModal';
 import ServerSettingsModal from '@/components/modals/ServerSettingsModal';
 import Avatar from '@/components/utils/Avatar';
-import { Plus, Trash2, LogOut, ArrowLeft, Settings, Cog, Home } from 'lucide-react';
+import { Plus, Trash2, LogOut, ArrowLeft, Settings, Cog, Home, MoreHorizontal, Pencil, X, Bell } from 'lucide-react';
 
 interface Server {
   id: string;
@@ -46,6 +46,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [draggedServer, setDraggedServer] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [ownerBadgeUser, setOwnerBadgeUser] = useState<string>('');
+  const [channelMenuOpen, setChannelMenuOpen] = useState<string | null>(null);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [renameChannelId, setRenameChannelId] = useState<string | null>(null);
+  const [renameChannelName, setRenameChannelName] = useState('');
+  const [serverNotifications, setServerNotifications] = useState<Record<string, number>>({});
+  const [dmNotifications, setDmNotifications] = useState<Record<string, number>>({});
+  const [unreadChannels, setUnreadChannels] = useState<Record<string, boolean>>({});
+  const [dmUnreadCount, setDmUnreadCount] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -147,6 +155,114 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     const interval = setInterval(fetchServers, 5000);
     return () => clearInterval(interval);
   }, [user]);
+
+  // Fetch notifications for servers and DMs
+  useEffect(() => {
+    if (!user) return;
+
+    async function fetchNotifications() {
+      try {
+        // Fetch DM notifications from localStorage (set by dm page or dm/[userId] page)
+        const savedDmUnread = localStorage.getItem('dmUnreadCount');
+        setDmUnreadCount(savedDmUnread ? parseInt(savedDmUnread) : 0);
+        
+        // Also check for unread DMs by reading lastReadDMs
+        const savedLastRead = localStorage.getItem('lastReadDMs');
+        const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+        
+        const dmRes = await fetch('/api/messages/conversations');
+        if (dmRes.ok) {
+          const conversations = await dmRes.json();
+          const dmNotifs: Record<string, number> = {};
+          let unreadCount = 0;
+          
+          for (const conv of conversations) {
+            // Don't count own user as having unread
+            if (conv.userId === user?.id) continue;
+            
+            if (conv.lastMessageAt) {
+              if (lastRead[conv.userId]) {
+                if (new Date(conv.lastMessageAt) > new Date(lastRead[conv.userId])) {
+                  dmNotifs[conv.userId] = 1;
+                  unreadCount++;
+                }
+              } else if (!lastRead[conv.userId]) {
+                dmNotifs[conv.userId] = 1;
+                unreadCount++;
+              }
+            }
+          }
+          setDmNotifications(dmNotifs);
+          setDmUnreadCount(unreadCount);
+          localStorage.setItem('dmUnreadCount', String(unreadCount));
+        }
+
+        // Fetch channel notifications for each server
+        const newServerNotifs: Record<string, number> = {};
+        const newUnreadChannels: Record<string, boolean> = {};
+        
+        for (const server of servers) {
+          const channels = serverChannels[server.id] || [];
+          let serverUnread = 0;
+          for (const channel of channels) {
+            const lastRead = localStorage.getItem(`lastRead_${channel.id}`);
+            const msgRes = await fetch(`/api/messages?channelId=${channel.id}`);
+            if (msgRes.ok) {
+              const messages = await msgRes.json();
+              const unread = messages.filter((m: any) => 
+                (!lastRead || new Date(m.createdAt) > new Date(lastRead)) && user && m.userId !== user.id
+              ).length;
+              if (unread > 0) {
+                newUnreadChannels[channel.id] = true;
+                serverUnread += unread;
+              }
+            }
+          }
+          if (serverUnread > 0) {
+            newServerNotifs[server.id] = serverUnread;
+          }
+        }
+        setUnreadChannels(newUnreadChannels);
+        setServerNotifications(newServerNotifs);
+      } catch (err) {
+        console.error('Failed to fetch notifications:', err);
+      }
+    }
+
+    fetchNotifications();
+    const notifInterval = setInterval(fetchNotifications, 10000);
+    return () => clearInterval(notifInterval);
+  }, [user, servers, serverChannels, mounted]);
+
+  // Mark channel notifications as read only when clicking inside the chat area
+  useEffect(() => {
+    if (!user) return;
+    
+    const markRead = (e: MouseEvent) => {
+      const match = pathname?.match(/\/server\/[^/]+\/channel\/([^/]+)/);
+      if (match) {
+        // Only mark as read if clicking inside the main chat area (not sidebar, not channel list)
+        const target = e.target as HTMLElement;
+        const isInChatArea = target.closest('.flex-1.bg-\\[\\#313338\\]') || 
+                            target.closest('main') ||
+                            target.closest('[class*="flex-col"][class*="overflow-y-auto"]');
+        const isInSidebar = target.closest('.w-60');
+        
+        if (isInChatArea && !isInSidebar) {
+          const channelId = match[1];
+          localStorage.setItem(`lastRead_${channelId}`, new Date().toISOString());
+          setUnreadChannels(prev => {
+            const updated = { ...prev };
+            delete updated[channelId];
+            return updated;
+          });
+        }
+      }
+    };
+
+    document.addEventListener('click', markRead);
+    return () => document.removeEventListener('click', markRead);
+  }, [pathname, user]);
 
   // Save activeServer to localStorage when it changes
   useEffect(() => {
@@ -327,6 +443,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setServers(servers.map(s => s.id === id ? updatedServer : s));
   };
 
+  const handleDeleteChannel = async (channelId: string) => {
+    if (!confirm('Delete this channel?')) return;
+    const res = await fetch(`/api/channels?channelId=${channelId}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) {
+      const updatedChannels = channels.filter(c => c.id !== channelId);
+      setChannels(updatedChannels);
+      if (activeServer) {
+        setServerChannels({ ...serverChannels, [activeServer.id]: updatedChannels });
+      }
+      setChannelMenuOpen(null);
+      if (updatedChannels.length > 0) {
+        router.push(`/server/${activeServer?.id}/channel/${updatedChannels[0].id}`);
+      }
+    }
+  };
+
+  const handleRenameChannel = async () => {
+    if (!renameChannelId || !renameChannelName.trim()) return;
+    const res = await fetch(`/api/channels?channelId=${renameChannelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: renameChannelName.trim() }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      const updatedChannels = channels.map(c => c.id === renameChannelId ? updated : c);
+      setChannels(updatedChannels);
+      if (activeServer) {
+        setServerChannels({ ...serverChannels, [activeServer.id]: updatedChannels });
+      }
+    }
+    setIsRenameModalOpen(false);
+    setRenameChannelId(null);
+  };
+
   const getFirstChannelId = (serverId: string) => {
     const chans = serverChannels[serverId];
     return chans?.[0]?.id || '';
@@ -337,36 +490,50 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Server Sidebar - Always show when logged in */}
       {user && (
         <div className="w-[72px] bg-[#1E1F22] flex flex-col items-center py-3 gap-2">
-          <Link 
-            href="/dm"
-            className="w-12 h-12 bg-[#5865F2] rounded-[24px] flex items-center justify-center cursor-pointer hover:rounded-[16px] transition-all duration-200"
-          >
-            <span className="text-xl font-bold">P</span>
-          </Link>
+          <div className="relative">
+            <Link 
+              href="/dm"
+              className="w-12 h-12 bg-[#5865F2] rounded-[24px] flex items-center justify-center cursor-pointer hover:rounded-[16px] transition-all duration-200"
+            >
+              <span className="text-xl font-bold">P</span>
+            </Link>
+            {dmUnreadCount > 0 && (
+              <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center transform translate-x-0.15 -translate-y-0.15">
+                {dmUnreadCount > 9 ? '9+' : dmUnreadCount}
+              </span>
+            )}
+          </div>
           <div className="w-8 h-[2px] bg-[#35363C] rounded-full" />
 
           <div className="flex flex-col gap-2 overflow-y-auto">
             {servers.map((server) => {
               const firstChannelId = getFirstChannelId(server.id);
+              const notifCount = serverNotifications[server.id] || 0;
               return (
-                <Link
-                  key={server.id}
-                  href={firstChannelId ? `/server/${server.id}/channel/${firstChannelId}` : '#'}
-                  onClick={() => setActiveServer(server)}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, server.id)}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, server.id)}
-                  className={`w-12 h-12 rounded-[24px] transition-all duration-200 cursor-pointer flex items-center justify-center overflow-hidden ${
-                    activeServer?.id === server.id ? 'bg-[#5865F2] rounded-[16px]' : 'bg-[#313338] hover:rounded-[16px] hover:bg-[#5865F2]'
-                  } ${draggedServer === server.id ? 'opacity-50' : ''}`}
-                >
-                  {server.icon ? (
-                    <img src={server.icon} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    server.name.charAt(0).toUpperCase()
+                <div key={server.id} className="relative">
+                  <Link
+                    href={firstChannelId ? `/server/${server.id}/channel/${firstChannelId}` : '#'}
+                    onClick={() => setActiveServer(server)}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, server.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, server.id)}
+                    className={`w-12 h-12 rounded-[24px] transition-all duration-200 cursor-pointer flex items-center justify-center overflow-hidden ${
+                      activeServer?.id === server.id ? 'bg-[#5865F2] rounded-[16px]' : 'bg-[#313338] hover:rounded-[16px] hover:bg-[#5865F2]'
+                    } ${draggedServer === server.id ? 'opacity-50' : ''}`}
+                  >
+                    {server.icon ? (
+                      <img src={server.icon} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      server.name.charAt(0).toUpperCase()
+                    )}
+                  </Link>
+                  {notifCount > 0 && (
+                    <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center transform translate-x-0.15 -translate-y-0.15">
+                      {notifCount > 9 ? '9+' : notifCount}
+                    </span>
                   )}
-                </Link>
+                </div>
               );
             })}
             <button
@@ -411,12 +578,40 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setIsServerSettingsOpen(false)}
         server={activeServer}
         onUpdate={(newName, newIcon) => {
-          // Update active server
           setActiveServer({ ...activeServer!, name: newName, icon: newIcon });
-          // Update servers list
           setServers(servers.map(s => s.id === activeServer?.id ? { ...s, name: newName, icon: newIcon } : s));
         }}
       />
+
+      {/* Rename Channel Modal */}
+      {isRenameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[#313338] rounded-lg p-6 w-80">
+            <h3 className="text-lg font-bold mb-4">Rename Channel</h3>
+            <input
+              type="text"
+              value={renameChannelName}
+              onChange={(e) => setRenameChannelName(e.target.value)}
+              className="w-full p-2 bg-[#1E1F22] rounded text-white outline-none focus:ring-2 ring-[#5865F2]"
+              autoFocus
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setIsRenameModalOpen(false)}
+                className="flex-1 py-2 bg-[#4F545C] rounded hover:bg-[#5D6269] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRenameChannel}
+                className="flex-1 py-2 bg-[#5865F2] rounded hover:bg-[#4752C4] transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 {/* Channel Sidebar - Show only on server routes */}
       {user && pathname?.startsWith('/server') && (
@@ -469,13 +664,42 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex flex-col gap-1">
               {channels.map((channel) => (
-                <Link
-                  key={channel.id}
-                  href={`/server/${activeServer?.id}/channel/${channel.id}`}
-                  className="px-2 py-1 rounded hover:bg-[#3F4147] cursor-pointer text-gray-300 hover:text-white flex items-center gap-2"
-                >
-                  <span className="text-gray-500">#</span> {channel.name}
-                </Link>
+                <div key={channel.id} className="group relative flex items-center">
+                  {unreadChannels[channel.id] && (
+                    <div className="absolute -left-2 top-0 bottom-0 w-1 bg-red-500 rounded-full" />
+                  )}
+                  <Link
+                    href={`/server/${activeServer?.id}/channel/${channel.id}`}
+                    className="flex-1 px-2 py-1 rounded hover:bg-[#3F4147] cursor-pointer text-gray-300 hover:text-white flex items-center gap-2"
+                  >
+                    <span className="text-gray-500">#</span> {channel.name}
+                    {unreadChannels[channel.id] && (
+                      <span className="ml-auto w-2 h-2 bg-red-500 rounded-full" />
+                    )}
+                  </Link>
+                  <button
+                    onClick={() => setChannelMenuOpen(channelMenuOpen === channel.id ? null : channel.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-[#3F4147] rounded text-gray-400 hover:text-white"
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  {channelMenuOpen === channel.id && (
+                    <div className="absolute left-0 top-full mt-1 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden z-50 min-w-[120px]">
+                      <button
+                        onClick={() => { setRenameChannelId(channel.id); setRenameChannelName(channel.name); setIsRenameModalOpen(true); setChannelMenuOpen(null); }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
+                      >
+                        <Pencil size={12} /> Rename
+                      </button>
+                      <button
+                        onClick={() => handleDeleteChannel(channel.id)}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-red-400"
+                      >
+                        <X size={12} /> Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>

@@ -41,18 +41,26 @@ export default function DMPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [otherUnreadCount, setOtherUnreadCount] = useState(0);
+  const [unreadConversations, setUnreadConversations] = useState<Record<string, boolean>>({});
+  const [isSending, setIsSending] = useState(false);
   const OLLAMA_USER_ID = 'cmoy30cd10000h071hxutrqvr';
 
   const prevMessages = useRef<Message[]>([]);
   const audioCtxRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageCount = useRef(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Only auto-scroll when new messages are added (not on initial load or scroll)
+    if (messages.length > lastMessageCount.current) {
+      scrollToBottom();
+    }
+    lastMessageCount.current = messages.length;
   }, [messages]);
 
   const getAudioContext = () => {
@@ -92,12 +100,34 @@ export default function DMPage() {
         if (res.ok) {
           const data = await res.json();
           setConversations(data);
+          
+          // Check for unread DMs (exclude own messages)
+          const savedLastRead = localStorage.getItem('lastReadDMs');
+          const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+          const unread: Record<string, boolean> = {};
+          
+          for (const conv of data) {
+            if (conv.userId === user?.id) continue;
+            
+            if (conv.lastMessageAt) {
+              if (lastRead[conv.userId]) {
+                if (new Date(conv.lastMessageAt) > new Date(lastRead[conv.userId])) {
+                  unread[conv.userId] = true;
+                }
+              } else if (!lastRead[conv.userId]) {
+                unread[conv.userId] = true;
+              }
+            }
+          }
+          setUnreadConversations(unread);
         }
       } catch (err) {
         console.error('Failed to fetch conversations:', err);
       }
     }
     fetchConversations();
+    const convInterval = setInterval(fetchConversations, 5000);
+    return () => clearInterval(convInterval);
   }, [user]);
 
   useEffect(() => {
@@ -149,6 +179,54 @@ export default function DMPage() {
     };
   }, [currentUserId]);
 
+  // Mark only this DM conversation as read when viewing
+  useEffect(() => {
+    if (currentUserId && user) {
+      const savedLastRead = localStorage.getItem('lastReadDMs');
+      const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+      lastRead[currentUserId] = new Date().toISOString();
+      localStorage.setItem('lastReadDMs', JSON.stringify(lastRead));
+      localStorage.setItem('dmUnreadCount', '0');
+    }
+  }, [currentUserId, user]);
+
+  // Fetch other conversations' unread count while in this DM
+  useEffect(() => {
+    if (!user) return;
+
+    async function checkOtherUnread() {
+      try {
+        const res = await fetch('/api/messages/conversations');
+        if (res.ok) {
+          const data = await res.json();
+          const savedLastRead = localStorage.getItem('lastReadDMs');
+          const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+          
+          let unread = 0;
+          for (const conv of data) {
+            if (conv.userId !== currentUserId && conv.lastMessageAt) {
+              if (lastRead[conv.userId]) {
+                if (new Date(conv.lastMessageAt) > new Date(lastRead[conv.userId])) {
+                  unread++;
+                }
+              } else {
+                unread++;
+              }
+            }
+          }
+          setOtherUnreadCount(unread);
+          localStorage.setItem('dmUnreadCount', String(unread));
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversations:', err);
+      }
+    }
+
+    checkOtherUnread();
+    const interval = setInterval(checkOtherUnread, 5000);
+    return () => clearInterval(interval);
+  }, [user, currentUserId]);
+
   async function fetchMessages() {
     try {
       const res = await fetch(`/api/messages/dm?otherUserId=${currentUserId}`);
@@ -180,7 +258,9 @@ export default function DMPage() {
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isSending) return;
+    
+    setIsSending(true);
 
     const isHi = user?.username?.toLowerCase() === 'hi';
 
@@ -313,6 +393,7 @@ export default function DMPage() {
       if (res.ok) {
         fetchMessages();
       }
+      setIsSending(false);
       return;
     }
 
@@ -324,13 +405,9 @@ export default function DMPage() {
 
     if (res.ok) {
       setInput('');
-      fetch('/api/messages/dm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: input, recipientId: currentUserId }),
-      });
       fetchMessages();
     }
+    setIsSending(false);
   }
 
   async function removeConversation() {
@@ -369,11 +446,16 @@ export default function DMPage() {
               <button
                 key={conv.userId}
                 onClick={() => router.push(`/dm/${conv.userId}`)}
-                className={`flex items-center gap-3 px-2 py-2 rounded transition-colors ${
+                className={`flex items-center gap-3 px-2 py-2 rounded transition-colors relative ${
                   conv.userId === currentUserId ? 'bg-[#393C43]' : 'hover:bg-[#34373C]'
                 }`}
               >
-                <Avatar src={conv.avatar} name={conv.username} size={32} />
+                <div className="relative">
+                  <Avatar src={conv.avatar} name={conv.username} size={32} />
+                  {unreadConversations[conv.userId] && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#2B2D31]" />
+                  )}
+                </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="font-medium text-white truncate">{conv.username}</div>
                   <div className="text-xs text-gray-400 truncate">{conv.lastMessage}</div>
@@ -435,7 +517,18 @@ export default function DMPage() {
           )}
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" onClick={() => {
+            // Mark only this conversation as read when clicking inside messages area
+            const savedLastRead = localStorage.getItem('lastReadDMs');
+            const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+            lastRead[currentUserId] = new Date().toISOString();
+            localStorage.setItem('lastReadDMs', JSON.stringify(lastRead));
+            setUnreadConversations(prev => {
+              const updated = { ...prev };
+              delete updated[currentUserId];
+              return updated;
+            });
+          }}>
           {messages.map((msg) => (
             <div key={msg.id} className="flex gap-4 items-start">
               <Avatar src={msg.user.avatar} name={msg.user.username} size={40} />
@@ -456,7 +549,18 @@ export default function DMPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={sendMessage} className="p-4 relative">
+        <form onSubmit={sendMessage} className="p-4 relative" onClick={() => {
+            // Mark only this conversation as read when clicking input area
+            const savedLastRead = localStorage.getItem('lastReadDMs');
+            const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+            lastRead[currentUserId] = new Date().toISOString();
+            localStorage.setItem('lastReadDMs', JSON.stringify(lastRead));
+            setUnreadConversations(prev => {
+              const updated = { ...prev };
+              delete updated[currentUserId];
+              return updated;
+            });
+          }}>
           <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
             <input
               value={input}

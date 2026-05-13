@@ -18,7 +18,8 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const { user: currentUser } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMsgCount = useRef<number>(0);
   const prevMessages = useRef<Message[]>([]);
   const audioCtxRef = useRef<any>(null);
@@ -59,8 +60,14 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const lastMsgCountRef = useRef(0);
+
   useEffect(() => {
-    scrollToBottom();
+    // Only auto-scroll when new messages are added
+    if (messages.length > lastMsgCountRef.current) {
+      scrollToBottom();
+    }
+    lastMsgCountRef.current = messages.length;
   }, [messages]);
 
   useEffect(() => {
@@ -86,10 +93,19 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
       fetchMessages();
     }, 2000);
 
+    // Mark channel as read when actively viewing
+    const markChannelRead = () => {
+      localStorage.setItem(`lastRead_${channelId}`, new Date().toISOString());
+    };
+    
+    // Mark as read immediately when messages are received
+    markChannelRead();
+
     // When tab becomes visible, immediately check for new messages
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         fetchMessages();
+        markChannelRead();
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -133,7 +149,9 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || !currentUser) return;
+    if (!input.trim() || !currentUser || isSending) return;
+    
+    setIsSending(true);
 
     if (input.trim().startsWith('/potatobot')) {
       const POTATOBOT_ID = 'cmoy30cd10000h071hxutrqvr';
@@ -160,59 +178,63 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
         }
         setInput('');
         fetchMessages();
+        setIsSending(false);
         return;
       }
       
       // Just /potatobot - add as member
       if (args === '') {
-        const res = await fetch(`/api/servers/${serverId}/members`, {
+        const memberRes = await fetch(`/api/servers/${serverId}/members`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: POTATOBOT_ID }),
         });
-        if (res.ok) {
+        if (memberRes.ok) {
           alert('PotatoBot added to server! Now type /potatobot [question] to chat');
         } else {
-          const data = await res.json();
+          const data = await memberRes.json();
           if (data.error === 'Already a member') {
             alert('PotatoBot is already in this server! Type /potatobot [question] to chat');
           } else {
             alert(data.error || 'Failed to add');
           }
-        }
-        setInput('');
-        fetchMessages();
-        return;
-      }
-      
-      // Check if PotatoBot is a member first
-      const membersRes = await fetch(`/api/servers/${serverId}/members`);
-      if (membersRes.ok) {
-        const members = await membersRes.json();
-        const hasPotatoBot = members.some((m: any) => m.id === POTATOBOT_ID);
-        if (!hasPotatoBot) {
-          alert('PotatoBot is not in this server. Type /potatobot first to add me!');
           setInput('');
           fetchMessages();
+          setIsSending(false);
           return;
         }
+        
+        // Check if PotatoBot is a member first
+        const membersRes = await fetch(`/api/servers/${serverId}/members`);
+        if (membersRes.ok) {
+          const members = await membersRes.json();
+          const hasPotatoBot = members.some((m: any) => m.id === POTATOBOT_ID);
+          if (!hasPotatoBot) {
+            alert('PotatoBot is not in this server. Type /potatobot first to add me!');
+            setInput('');
+            fetchMessages();
+            setIsSending(false);
+            return;
+          }
+        }
+        
+        // Ask PotatoBot a question
+        setInput('');
+        const res = await fetch('/api/ollama/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: args, userId: currentUser.id, channelId, serverId }),
+        });
+        
+        if (res.ok) {
+          fetchMessages();
+        } else {
+          alert('PotatoBot is not responding. Make sure Ollama is running.');
+          fetchMessages();
+        }
+        setIsSending(false);
+        return;
       }
-      
-      // Ask PotatoBot a question
-      setInput('');
-      const res = await fetch('/api/ollama/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: args, userId: currentUser.id, channelId, serverId }),
-      });
-      
-      if (res.ok) {
-        fetchMessages();
-      } else {
-        alert('PotatoBot is not responding. Make sure Ollama is running.');
-        fetchMessages();
-      }
-      return;
     }
 
     if (input.trim() === '/clear') {
@@ -228,12 +250,14 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
       } else {
         alert('Failed to clear messages');
       }
+      setIsSending(false);
       return;
     }
 
     if (input.trim() === '/help') {
       alert('Server Commands:\n/potatobot - Add PotatoBot to server\n/potatobot [question] - Ask PotatoBot\n/potatobot remove - Remove PotatoBot\n/clear - Clear all messages\n/help - Show this help');
       setInput('');
+      setIsSending(false);
       return;
     }
 
@@ -255,6 +279,7 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
           alert('Usage: /ownerbadge on or /ownerbadge off');
         }
         window.location.reload();
+        setIsSending(false);
         return;
       }
     }
@@ -270,6 +295,7 @@ const messagesEndRef = useRef<HTMLDivElement>(null);
       // Will be fetched by poll
       setTimeout(fetchMessages, 500);
     }
+    setIsSending(false);
   }
 
   return (

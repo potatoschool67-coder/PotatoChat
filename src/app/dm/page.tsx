@@ -34,6 +34,8 @@ export default function DMHomePage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [recentNotifications, setRecentNotifications] = useState<{type: string; from: string; preview: string; time: string}[]>([]);
+  const [unreadDMs, setUnreadDMs] = useState<Record<string, boolean>>({});
+  const [lastReadDMs, setLastReadDMs] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -44,17 +46,58 @@ export default function DMHomePage() {
         if (res.ok) {
           const data = await res.json();
           setConversations(data);
+          
+          // Check for unread DMs
+          const savedLastRead = localStorage.getItem('lastReadDMs');
+          const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+          const unread: Record<string, boolean> = {};
+          
+          for (const conv of data) {
+            if (conv.lastMessageAt && lastRead[conv.userId]) {
+              if (new Date(conv.lastMessageAt) > new Date(lastRead[conv.userId])) {
+                unread[conv.userId] = true;
+              }
+            } else if (conv.lastMessageAt && !lastRead[conv.userId]) {
+              unread[conv.userId] = true;
+            }
+          }
+          setUnreadDMs(unread);
+          setLastReadDMs(lastRead);
+          const totalUnread = Object.keys(unread).length;
+          localStorage.setItem('dmUnreadCount', String(totalUnread));
         }
       } catch (err) {
         console.error('Failed to fetch conversations:', err);
       }
     }
 
-    fetchConversations();
-
+fetchConversations();
     const interval = setInterval(fetchConversations, 5000);
     return () => clearInterval(interval);
   }, [user]);
+
+  // Poll to update unread counts
+  useEffect(() => {
+    if (!user) return;
+
+    const updateUnreadCount = () => {
+      const savedLastRead = localStorage.getItem('lastReadDMs');
+      const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+      const unread = Object.keys(unreadDMs).filter(uid => {
+        if (lastRead[uid]) {
+          const conv = conversations.find(c => c.userId === uid);
+          if (conv && conv.lastMessageAt) {
+            return new Date(conv.lastMessageAt) > new Date(lastRead[uid]);
+          }
+        }
+        return false;
+      });
+      localStorage.setItem('dmUnreadCount', String(unread.length));
+    };
+
+    const interval = setInterval(updateUnreadCount, 5000);
+    return () => clearInterval(interval);
+  }, [user, unreadDMs, conversations]);
 
   useEffect(() => {
     if (!addUserSearch.trim()) {
@@ -79,6 +122,51 @@ export default function DMHomePage() {
 
     return () => clearTimeout(timer);
   }, [addUserSearch, user]);
+
+  // Mark DM as read only when clicking inside the conversation list (not the welcome area)
+  useEffect(() => {
+    const handleMarkRead = (e: MouseEvent) => {
+      if (conversations.length === 0) return;
+      
+      const target = e.target as HTMLElement;
+      // Only mark as read if clicking on a conversation button in the list
+      const conversationButton = target.closest('button[class*="rounded"][class*="hover:bg"]');
+      
+      if (conversationButton) {
+        // Get which conversation was clicked
+        const buttonText = conversationButton.textContent || '';
+        // Mark only conversations as read that were clicked
+        const clickedConv = conversations.find(c => 
+          buttonText.includes(c.username)
+        );
+        
+        const now = new Date().toISOString();
+        const savedLastRead = localStorage.getItem('lastReadDMs');
+        const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
+        
+        // Only mark the clicked conversation as read
+        if (clickedConv) {
+          lastRead[clickedConv.userId] = now;
+        }
+        
+        localStorage.setItem('lastReadDMs', JSON.stringify(lastRead));
+        // Recalculate unread count
+        const newUnread: Record<string, boolean> = {};
+        conversations.forEach(conv => {
+          if (lastRead[conv.userId]) {
+            if (conv.lastMessageAt && new Date(conv.lastMessageAt) > new Date(lastRead[conv.userId])) {
+              newUnread[conv.userId] = true;
+            }
+          }
+        });
+        setUnreadDMs(newUnread);
+        localStorage.setItem('dmUnreadCount', String(Object.keys(newUnread).length));
+      }
+    };
+
+    document.addEventListener('click', handleMarkRead);
+    return () => document.removeEventListener('click', handleMarkRead);
+  }, [conversations]);
 
   const handleStartConversation = async (userId: string) => {
     router.push(`/dm/${userId}`);
@@ -134,9 +222,14 @@ export default function DMHomePage() {
               <button
                 key={conv.userId}
                 onClick={() => router.push(`/dm/${conv.userId}`)}
-                className="flex items-center gap-3 px-2 py-2 rounded hover:bg-[#34373C] transition-colors text-left"
+                className="flex items-center gap-3 px-2 py-2 rounded hover:bg-[#34373C] transition-colors text-left relative"
               >
-                <Avatar src={conv.avatar} name={conv.username} size={40} />
+                <div className="relative">
+                  <Avatar src={conv.avatar} name={conv.username} size={40} />
+                  {unreadDMs[conv.userId] && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#2B2D31]" />
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-white truncate">{conv.username}</div>
                   <div className="text-xs text-gray-400 truncate">{conv.lastMessage}</div>
