@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
+import { ensureAudioContext, unlockAudio } from '@/lib/audio';
 
 interface Message {
   id: string;
@@ -24,19 +25,10 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const prevMessages = useRef<Message[]>([]);
   const audioCtxRef = useRef<any>(null);
 
-  const getAudioContext = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
-  };
-
-  const playNotificationSound = () => {
+  const playNotificationSound = async () => {
     try {
-      const audioCtx = getAudioContext();
+      const audioCtx = await ensureAudioContext();
+      audioCtxRef.current = audioCtx;
       const now = audioCtx.currentTime;
       
       [523.25, 659.25, 783.99].forEach((freq, i) => {
@@ -63,24 +55,17 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const lastMsgCountRef = useRef(0);
 
   useEffect(() => {
-    // Only auto-scroll when new messages are added
-    if (messages.length > lastMsgCountRef.current) {
-      scrollToBottom();
-    }
-    lastMsgCountRef.current = messages.length;
-  }, [messages]);
+    ensureAudioContext();
+    const handleUnlock = () => {
+      unlockAudio();
+      document.removeEventListener('click', handleUnlock);
+    };
+    document.addEventListener('click', handleUnlock);
+    return () => document.removeEventListener('click', handleUnlock);
+  }, []);
 
   useEffect(() => {
     prevMessages.current = [];
-    
-    // Unlock audio on first click
-    const unlockAudio = () => {
-      getAudioContext();
-      document.removeEventListener('click', unlockAudio);
-    };
-    document.addEventListener('click', unlockAudio);
-    
-    return () => document.removeEventListener('click', unlockAudio);
   }, [channelId]);
 
   useEffect(() => {

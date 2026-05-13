@@ -8,6 +8,7 @@ import Linkify from '@/components/utils/Linkify';
 import SettingsModal from '@/components/modals/SettingsModal';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import { useAuth } from '@/context/AuthContext';
+import { ensureAudioContext, unlockAudio } from '@/lib/audio';
 
 interface Message {
   id: string;
@@ -47,35 +48,11 @@ export default function DMPage() {
   const OLLAMA_USER_ID = 'cmoy30cd10000h071hxutrqvr';
 
   const prevMessages = useRef<Message[]>([]);
-  const audioCtxRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastMessageCount = useRef(0);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    // Only auto-scroll when new messages are added (not on initial load or scroll)
-    if (messages.length > lastMessageCount.current) {
-      scrollToBottom();
-    }
-    lastMessageCount.current = messages.length;
-  }, [messages]);
-
-  const getAudioContext = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
-  };
-
-  const playNotificationSound = () => {
+  const playNotificationSound = async () => {
     try {
-      const audioCtx = getAudioContext();
+      const audioCtx = await ensureAudioContext();
       const now = audioCtx.currentTime;
       
       [523.25, 659.25, 783.99].forEach((freq, i) => {
@@ -90,8 +67,20 @@ export default function DMPage() {
         osc.start(now + i * 0.08);
         osc.stop(now + i * 0.08 + 0.3);
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('Audio error:', e);
+    }
   };
+
+  useEffect(() => {
+    unlockAudio();
+    const handleUnlock = () => {
+      unlockAudio();
+      document.removeEventListener('click', handleUnlock);
+    };
+    document.addEventListener('click', handleUnlock);
+    return () => document.removeEventListener('click', handleUnlock);
+  }, []);
 
   useEffect(() => {
     async function fetchConversations() {
@@ -149,14 +138,6 @@ export default function DMPage() {
 
   useEffect(() => {
     prevMessages.current = [];
-    
-    const unlockAudio = () => {
-      getAudioContext();
-      document.removeEventListener('click', unlockAudio);
-    };
-    document.addEventListener('click', unlockAudio);
-    
-    return () => document.removeEventListener('click', unlockAudio);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -258,7 +239,7 @@ export default function DMPage() {
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || isSending) return;
+    if (!input.trim() || !user || isSending) return;
     
     setIsSending(true);
 
@@ -353,7 +334,10 @@ export default function DMPage() {
     }
 
     if (input.trim() === '/clear') {
-      if (!confirm('Are you sure you want to delete all messages in this conversation?')) return;
+      if (!confirm('Are you sure you want to delete all messages in this conversation?')) {
+        setIsSending(false);
+        return;
+      }
       
       const res = await fetch(`/api/messages/dm?otherUserId=${currentUserId}`, {
         method: 'DELETE',
@@ -365,12 +349,14 @@ export default function DMPage() {
       } else {
         alert('Failed to clear messages');
       }
+      setIsSending(false);
       return;
     }
 
     if (input.trim() === '/help') {
       alert('Available commands:\n/clear - Delete all messages in this conversation\n/help - Show this help message');
       setInput('');
+      setIsSending(false);
       return;
     }
 
