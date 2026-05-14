@@ -15,9 +15,15 @@ export async function PUT(req: Request) {
     }
 
     const { status } = await req.json();
+    const userId = payload.userId as string;
+
+    const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existingUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
 
     await prisma.user.update({
-      where: { id: payload.userId as string },
+      where: { id: userId },
       data: { status },
     });
 

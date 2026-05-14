@@ -52,9 +52,12 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
     setError('');
     setIsLoading(true);
 
+    // Only use password if server is private
+    const finalPassword = isPrivate ? password : '';
+
     try {
       if (view === 'create') {
-        await onCreateServer(input, isPrivate, password);
+        await onCreateServer(input, isPrivate, finalPassword);
       } else if (view === 'join') {
         await onJoinServer(input, joinPassword || undefined);
       } else if (view === 'edit' && editServer && onUpdateServer) {
