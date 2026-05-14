@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut } from 'lucide-react';
+import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut, MoreHorizontal } from 'lucide-react';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
 import SettingsModal from '@/components/modals/SettingsModal';
@@ -10,6 +10,8 @@ import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import { useAuth } from '@/context/AuthContext';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
 import { decodeMessage } from '@/lib/messageEncoding';
+import { extractImages, removeImagesFromText } from '@/lib/imageUtils';
+import ImagePreview from '@/components/utils/ImagePreview';
 
 interface Message {
   id: string;
@@ -39,6 +41,8 @@ export default function DMPage() {
   const currentUserId = params.userId as string;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [openMenuMsgId, setOpenMenuMsgId] = useState<string | null>(null);
   const [otherUser, setOtherUser] = useState<User | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -46,6 +50,11 @@ export default function DMPage() {
   const [otherUnreadCount, setOtherUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
+  
+const handleInputChange = (value: string) => {
+    setInput(value);
+  };
+
   const OLLAMA_USER_ID = 'cmoy30cd10000h071hxutrqvr';
 
   const prevMessages = useRef<Message[]>([]);
@@ -252,7 +261,8 @@ export default function DMPage() {
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || !user || isSending) return;
+    const canSend = (input.trim() || imageUrl) && user && !isSending;
+    if (!canSend) return;
     
     setIsSending(true);
 
@@ -374,8 +384,9 @@ export default function DMPage() {
     }
 
     if (currentUserId === OLLAMA_USER_ID) {
-      const msg = input;
+      const msg = imageUrl ? `${input} ${imageUrl}`.trim() : input;
       setInput('');
+      setImageUrl(null);
       
       await fetch('/api/messages/dm', {
         method: 'POST',
@@ -396,18 +407,36 @@ export default function DMPage() {
       return;
     }
 
+    const messageContent = imageUrl ? `${input} ${imageUrl}`.trim() : input;
+
     const res = await fetch('/api/messages/dm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: input, recipientId: currentUserId }),
+      body: JSON.stringify({ content: messageContent, recipientId: currentUserId }),
     });
 
     if (res.ok) {
       setInput('');
+      setImageUrl(null);
       fetchMessages();
     }
     setIsSending(false);
   }
+
+  const deleteMessage = async (messageId: string) => {
+    if (!confirm('Delete this message?')) return;
+    
+    const res = await fetch(`/api/messages?id=${messageId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.ok) {
+      fetchMessages();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to delete message');
+    }
+  };
 
   async function removeConversation() {
     if (!confirm('Are you sure you want to delete this conversation?')) return;
@@ -537,8 +566,48 @@ export default function DMPage() {
                   <span className="text-xs text-gray-400">
                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
+                  {msg.user.id === user?.id && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setOpenMenuMsgId(openMenuMsgId === msg.id ? null : msg.id)}
+                        className="text-gray-400 hover:text-white p-1 rounded"
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {openMenuMsgId === msg.id && (
+                        <div className="absolute top-full left-0 mt-1 bg-[#18191c] rounded shadow-lg border border-[#1f1f22] py-1 z-10 min-w-[120px]">
+                          <button
+                            onClick={() => { deleteMessage(msg.id); setOpenMenuMsgId(null); }}
+                            className="w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-[#3F4147] flex items-center gap-2"
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-gray-300"><Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} /></p>
+                <p className="text-gray-300">
+                  <Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} />
+                </p>
+                {(() => {
+                  const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
+                  const images = extractImages(rawContent);
+                  if (images.length === 0) return null;
+                  return (
+                    <div className="mt-2 space-y-2">
+                      {images.map((img, i) => (
+                        <img
+                          key={i}
+                          src={img}
+                          alt="Shared image"
+                          className="max-w-[300px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(img, '_blank')}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}
@@ -560,10 +629,22 @@ export default function DMPage() {
               return updated;
             });
           }}>
+          <ImagePreview imageUrl={imageUrl} onRemove={() => setImageUrl(null)} />
           <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  const hasCommand = input.trim().startsWith('/');
+                  const hasMention = input.includes('@');
+                  if (!hasCommand && !hasMention) {
+                    e.preventDefault();
+                    const form = e.currentTarget.form;
+                    if (form) form.requestSubmit();
+                  }
+                }
+              }}
               placeholder={`Message ${otherUser?.username || 'user'}`}
               className="flex-1 bg-transparent outline-none text-gray-200 py-2"
             />

@@ -48,7 +48,7 @@ export async function GET(req: Request) {
             userId: otherUser.id,
             username: otherUser.username,
             avatar: otherUser.avatar,
-            lastMessage: msg.content,
+            lastMessage: msg.isEncrypted ? Buffer.from(msg.content, 'base64').toString('utf-8') : msg.content,
             lastMessageAt: msg.createdAt,
           });
         }

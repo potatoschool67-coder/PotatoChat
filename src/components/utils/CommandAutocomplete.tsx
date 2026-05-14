@@ -12,6 +12,7 @@ interface CommandAutocompleteProps {
   onSelect?: (cmd: string) => void;
   userId?: string;
   username?: string;
+  onShowChange?: (show: boolean) => void;
 }
 
 const SERVER_COMMANDS: Command[] = [
@@ -45,7 +46,7 @@ const ADMIN_COMMANDS: Command[] = [
   { name: '/help', description: 'Show help' },
 ];
 
-export default function CommandAutocomplete({ onSelect, userId, username }: CommandAutocompleteProps) {
+export default function CommandAutocomplete({ onSelect, userId, username, onShowChange }: CommandAutocompleteProps) {
   const pathname = usePathname();
   const isDM = pathname?.startsWith('/dm');
   
@@ -72,6 +73,7 @@ export default function CommandAutocomplete({ onSelect, userId, username }: Comm
       const val = input.value;
       setFilter(val);
       setShow(val.startsWith('/'));
+      if (onShowChange) onShowChange(val.startsWith('/'));
       if (!val.startsWith('/')) setSelected(0);
     };
 
@@ -94,6 +96,7 @@ export default function CommandAutocomplete({ onSelect, userId, username }: Comm
         applyCommand(filtered[selected]);
       } else if (e.key === 'Escape') {
         setShow(false);
+        if (onShowChange) onShowChange(false);
       }
     };
 

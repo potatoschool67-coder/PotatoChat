@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Trash2, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
+import MentionAutocomplete from '@/components/utils/MentionAutocomplete';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
 import { decodeMessage } from '@/lib/messageEncoding';
+import { highlightMentions } from '@/lib/mentionHighlight';
+import { extractImages, removeImagesFromText } from '@/lib/imageUtils';
+import ImagePreview from '@/components/utils/ImagePreview';
 
 interface Message {
   id: string;
@@ -21,6 +25,56 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [showCommandAutocomplete, setShowCommandAutocomplete] = useState(false);
+  const [openMenuMsgId, setOpenMenuMsgId] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const processedRef = useRef(false);
+
+const handleInputChange = (value: string) => {
+    if (imageUrl) {
+      setInput(value);
+      return;
+    }
+    
+    // Check for img src tag first
+    const imgMatch = value.match(/src=["']([^"']+)["']/i);
+    if (imgMatch) {
+      const url = imgMatch[1];
+      const cleaned = value.replace(/<img[^>]*>/i, '').trim();
+      setImageUrl(url);
+      setInput(cleaned);
+      return;
+    }
+    
+    // Check for data:image base64
+    const dataIdx = value.indexOf('data:image/');
+    if (dataIdx !== -1) {
+      const rest = value.slice(dataIdx);
+      const spaceIdx = rest.indexOf(' ');
+      const url = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+      if (url.length > 20) {
+        setImageUrl(url);
+        setInput(value.replace(url, '').trim());
+        return;
+      }
+    }
+    
+    // Check for regular image URLs
+    const imgExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
+    const httpMatch = value.match(/https?:\/\/[^\s]+/i);
+    if (httpMatch) {
+      const urlLower = httpMatch[0].toLowerCase();
+      const isImage = imgExtensions.some(ext => urlLower.includes(ext));
+      if (isImage) {
+        setImageUrl(httpMatch[0]);
+        setInput(value.replace(httpMatch[0], '').trim());
+        return;
+      }
+    }
+    
+    setInput(value);
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastMsgCount = useRef<number>(0);
   const prevMessages = useRef<Message[]>([]);
@@ -116,17 +170,22 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
       if (res.ok) {
         const data = await res.json();
         
-        // Only play sound if there are actually new messages (by ID)
+        // Only play sound if there are actually new messages (by ID) and you got pinged
         if (prevMessages.current.length > 0) {
           const newMsgIds = data.map((m: Message) => m.id).filter((id: string) => 
             !prevMessages.current.some((m) => m.id === id)
           );
           if (newMsgIds.length > 0) {
+            const content = (msg: Message) => (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
             for (const id of newMsgIds) {
               const msg = data.find((m: Message) => m.id === id);
               if (msg && msg.user.id !== currentUser?.id) {
-                playNotificationSound();
-                break;
+                const msgContent = content(msg);
+                const isPingingMe = msgContent.includes(`@${currentUser?.username}`) || msgContent.includes('@everyone');
+                if (isPingingMe) {
+                  playNotificationSound();
+                  break;
+                }
               }
             }
           }
@@ -142,7 +201,8 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || !currentUser || isSending) return;
+    const canSend = (input.trim() || imageUrl) && currentUser && !isSending;
+    if (!canSend) return;
     
     setIsSending(true);
 
@@ -277,19 +337,36 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
       }
     }
 
+    const messageContent = imageUrl ? `${input} ${imageUrl}`.trim() : input;
+    
     const res = await fetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: input, channelId }),
+      body: JSON.stringify({ content: messageContent, channelId }),
     });
 
     if (res.ok) {
       setInput('');
-      // Will be fetched by poll
+      setImageUrl(null);
       setTimeout(fetchMessages, 500);
     }
     setIsSending(false);
   }
+
+  const deleteMessage = async (messageId: string) => {
+    if (!confirm('Delete this message?')) return;
+    
+    const res = await fetch(`/api/messages?id=${messageId}`, {
+      method: 'DELETE',
+    });
+
+    if (res.ok) {
+      fetchMessages();
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Failed to delete message');
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -309,8 +386,65 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
                 <span className="text-xs text-gray-400">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                {msg.user?.id === currentUser?.id && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setOpenMenuMsgId(openMenuMsgId === msg.id ? null : msg.id)}
+                      className="text-gray-400 hover:text-white p-1 rounded"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {openMenuMsgId === msg.id && (
+                      <div className="absolute top-full left-0 mt-1 bg-[#18191c] rounded shadow-lg border border-[#1f1f22] py-1 z-10 min-w-[120px]">
+                        <button
+                          onClick={() => { deleteMessage(msg.id); setOpenMenuMsgId(null); }}
+                          className="w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-[#3F4147] flex items-center gap-2"
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="text-gray-300"><Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} /></p>
+              <p className="text-gray-300">
+                  {(() => {
+                    const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
+                    const images = extractImages(rawContent);
+                    const textContent = removeImagesFromText(rawContent);
+                    const parts = highlightMentions(textContent);
+                    const mentioned = textContent.includes(`@${currentUser?.username}`) || textContent.includes('@everyone');
+                    return (
+                      <span className={mentioned ? 'bg-[#FBBF24]/10 -mx-2 px-2 rounded block' : ''}>
+                        {parts.map((part, i) => (
+                          part.isMention ? (
+                            <span key={i} className="text-[#5865F2] font-semibold">{part.text}</span>
+                          ) : (
+                            <span key={i}><Linkify text={part.text} /></span>
+                          )
+                        ))}
+                      </span>
+                    );
+                  })()}
+                </p>
+                {(() => {
+                  const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
+                  const images = extractImages(rawContent);
+                  if (images.length === 0) return null;
+                  return (
+                    <div className="mt-2 space-y-2">
+                      {images.map((img, i) => (
+                        <img
+                          key={i}
+                          src={img}
+                          alt="Shared image"
+                          className="max-w-[300px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(img, '_blank')}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
             </div>
           </div>
         ))}
@@ -318,11 +452,21 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
       </div>
 
       <form onSubmit={sendMessage} className="p-4 relative">
-        <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} />
+        <ImagePreview imageUrl={imageUrl} onRemove={() => setImageUrl(null)} />
+        <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} onShowChange={setShowCommandAutocomplete} />
+        <MentionAutocomplete inputValue={input} inputRef={inputRef} onInsert={setInput} serverId={serverId} />
         <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
           <input
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !showCommandAutocomplete) {
+                e.preventDefault();
+                const form = e.currentTarget.form;
+                if (form) form.requestSubmit();
+              }
+            }}
             placeholder={`Message #${channelName}`}
             className="flex-1 bg-transparent outline-none text-gray-200 py-2"
           />
