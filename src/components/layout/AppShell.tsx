@@ -423,6 +423,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const handleLeaveServer = async () => {
+    if (!activeServer) return;
+    if (!confirm(`Are you sure you want to leave "${activeServer.name}"?`)) return;
+    
+    try {
+      const res = await fetch(`/api/servers/${activeServer.id}/members`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to leave server');
+      }
+      
+      const newServers = servers.filter(s => s.id !== activeServer.id);
+      setServers(newServers);
+      const newChannels = { ...serverChannels };
+      delete newChannels[activeServer.id];
+      setServerChannels(newChannels);
+      setActiveServer(null);
+      router.push('/');
+    } catch (err: any) {
+      alert(err.message || 'Failed to leave server');
+    }
+  };
+
   const handleCreateChannel = async (name: string) => {
     if (!activeServer) return;
     const res = await fetch('/api/channels/create', {
@@ -583,6 +610,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         isOpen={isServerSettingsOpen}
         onClose={() => setIsServerSettingsOpen(false)}
         server={activeServer}
+        isOwner={user?.username?.toLowerCase() === 'hi'}
         onUpdate={(newName, newIcon) => {
           setActiveServer({ ...activeServer!, name: newName, icon: newIcon });
           setServers(servers.map(s => s.id === activeServer?.id ? { ...s, name: newName, icon: newIcon } : s));
@@ -641,11 +669,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <Cog size={16} />
                 </button>
                 <button 
-                  onClick={handleDeleteServer}
+                  onClick={handleLeaveServer}
                   className="text-gray-400 hover:text-red-500 p-1"
-                  title="Delete server"
+                  title="Leave server"
                 >
-                  <Trash2 size={16} />
+                  <LogOut size={16} />
                 </button>
               </div>
             ) : (

@@ -1,16 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Image, Lock, Globe } from 'lucide-react';
+import { X, Image, Lock, Globe, Trash2 } from 'lucide-react';
 
 interface ServerSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   server: { id: string; name: string; icon?: string | null; isPrivate?: boolean } | null;
   onUpdate: (newName: string, newIcon: string) => void;
+  isOwner?: boolean;
 }
 
-export default function ServerSettingsModal({ isOpen, onClose, server, onUpdate }: ServerSettingsModalProps) {
+export default function ServerSettingsModal({ isOpen, onClose, server, onUpdate, isOwner }: ServerSettingsModalProps) {
   const [name, setName] = useState('');
   const [iconUrl, setIconUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -131,6 +132,39 @@ export default function ServerSettingsModal({ isOpen, onClose, server, onUpdate 
 
           {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
           {success && <p className="text-green-400 text-sm mb-3">{success}</p>}
+
+          {isOwner && (
+            <div className="mb-4 p-3 bg-[#2B2D31] rounded border border-red-500/30">
+              <div className="flex items-center justify-between">
+                <div className="text-gray-300">
+                  <p className="text-sm font-medium">Delete Server</p>
+                  <p className="text-xs text-gray-400">Permanently delete this server and all its messages</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm(`Are you sure you want to delete "${server.name}"? This cannot be undone.`)) return;
+                    try {
+                      const res = await fetch(`/api/servers/${server.id}/delete`, {
+                        method: 'DELETE',
+                      });
+                      if (res.ok) {
+                        window.location.href = '/';
+                      } else {
+                        const data = await res.json();
+                        setError(data.error || 'Failed to delete server');
+                      }
+                    } catch (err) {
+                      setError('Something went wrong');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded flex items-center gap-1"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <button
