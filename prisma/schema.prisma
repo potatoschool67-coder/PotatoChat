@@ -28,6 +28,8 @@ model Server {
   name        String    @unique
   description String?
   icon        String?
+  isPrivate   Boolean   @default(false)
+  password    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -52,6 +54,7 @@ model Channel {
 model Message {
   id          String    @id @default(cuid())
   content     String
+  isEncrypted Boolean  @default(false)
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   channelId   String?

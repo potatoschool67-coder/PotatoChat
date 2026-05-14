@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plus, LogIn, Upload } from 'lucide-react';
+import { X, Plus, LogIn, ChevronDown, ChevronRight, Lock } from 'lucide-react';
 
 interface Server {
   id: string;
@@ -12,8 +12,8 @@ interface Server {
 interface ServerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateServer: (name: string) => Promise<void>;
-  onJoinServer: (serverName: string) => Promise<void>;
+  onCreateServer: (name: string, isPrivate: boolean, password: string) => Promise<void>;
+  onJoinServer: (serverName: string, password?: string) => Promise<void>;
   editServer?: Server | null;
   onUpdateServer?: (id: string, name: string, icon: string | null) => Promise<void>;
 }
@@ -24,6 +24,10 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
   const [iconInput, setIconInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showExtraSettings, setShowExtraSettings] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
 
   React.useEffect(() => {
     if (editServer) {
@@ -34,8 +38,12 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
       setView('create');
       setInput('');
       setIconInput('');
+      setShowExtraSettings(false);
+      setIsPrivate(false);
+      setPassword('');
+      setJoinPassword('');
     }
-  }, [editServer]);
+  }, [editServer, isOpen]);
 
   if (!isOpen) return null;
 
@@ -46,14 +54,16 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
 
     try {
       if (view === 'create') {
-        await onCreateServer(input);
+        await onCreateServer(input, isPrivate, password);
       } else if (view === 'join') {
-        await onJoinServer(input);
+        await onJoinServer(input, joinPassword || undefined);
       } else if (view === 'edit' && editServer && onUpdateServer) {
         await onUpdateServer(editServer.id, input, iconInput || null);
       }
       setInput('');
       setIconInput('');
+      setPassword('');
+      setJoinPassword('');
       onClose();
     } catch (err: any) {
       setError(err.message || 'An error occurred. Please try again.');
@@ -100,6 +110,61 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
             />
           </div>
 
+          {view === 'join' && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-gray-400 uppercase">Password (if required)</label>
+              <input
+                type="password"
+                className="p-2 bg-[#1E1F22] text-white rounded outline-none focus:ring-2 ring-indigo-500 transition-all"
+                value={joinPassword}
+                onChange={(e) => setJoinPassword(e.target.value)}
+                placeholder="Enter server password..."
+              />
+            </div>
+          )}
+
+          {view === 'create' && (
+            <div className="border border-[#1E1F22] rounded-md overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowExtraSettings(!showExtraSettings)}
+                className="w-full flex items-center justify-between p-3 bg-[#2B2D31] hover:bg-[#35373C] transition-colors text-gray-300"
+              >
+                <span className="text-sm font-medium">Extra Settings</span>
+                {showExtraSettings ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+              {showExtraSettings && (
+                <div className="p-4 bg-[#2B2D31] border-t border-[#1E1F22] space-y-4">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="isPrivate"
+                      checked={isPrivate}
+                      onChange={(e) => { setIsPrivate(e.target.checked); if (!e.target.checked) setPassword(''); }}
+                      className="w-4 h-4 rounded bg-[#1E1F22] border-gray-600 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="isPrivate" className="text-sm text-gray-300 flex items-center gap-2">
+                      <Lock size={14} /> Make this server private
+                    </label>
+                  </div>
+                  {isPrivate && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase">Password</label>
+                      <input
+                        type="password"
+                        className="p-2 bg-[#1E1F22] text-white rounded outline-none focus:ring-2 ring-indigo-500 transition-all"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter password to join..."
+                        required={isPrivate}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
           <div className="flex justify-end gap-3 mt-4">
@@ -115,7 +180,7 @@ export default function ServerModal({ isOpen, onClose, onCreateServer, onJoinSer
               <>
                 <button
                   type="button"
-                  onClick={() => { setView(view === 'create' ? 'join' : 'create'); setError(''); }}
+                  onClick={() => { setView(view === 'create' ? 'join' : 'create'); setError(''); setShowExtraSettings(false); setIsPrivate(false); setPassword(''); setJoinPassword(''); }}
                   className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors"
                 >
                   {view === 'create' ? 'Join instead' : 'Create instead'}

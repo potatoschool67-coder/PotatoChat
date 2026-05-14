@@ -350,11 +350,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [activeServer]);
 
-  const handleCreateServer = async (name: string) => {
+  const handleCreateServer = async (name: string, isPrivate: boolean, password: string) => {
     const res = await fetch('/api/servers/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, isPrivate, password }),
     });
     if (!res.ok) throw new Error('Failed to create server');
     const server = await res.json();
@@ -370,13 +370,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleJoinServer = async (serverName: string) => {
+  const handleJoinServer = async (serverName: string, password?: string) => {
     const res = await fetch('/api/servers/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ serverName }),
+      body: JSON.stringify({ serverName, password }),
     });
-    if (!res.ok) throw new Error('Server not found');
+    if (!res.ok) {
+      const data = await res.json();
+      if (data.requiresPassword) {
+        throw new Error(data.error || 'Password required');
+      }
+      throw new Error(data.error || 'Server not found');
+    }
     const data = await res.json();
     const server = data.server;
     if (!servers.find(s => s.id === server.id)) {

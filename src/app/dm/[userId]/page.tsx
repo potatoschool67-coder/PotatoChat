@@ -9,6 +9,7 @@ import SettingsModal from '@/components/modals/SettingsModal';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import { useAuth } from '@/context/AuthContext';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
+import { decodeMessage } from '@/lib/messageEncoding';
 
 interface Message {
   id: string;
@@ -49,6 +50,11 @@ export default function DMPage() {
 
   const prevMessages = useRef<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageCount = useRef(0);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const playNotificationSound = async () => {
     try {
@@ -81,6 +87,13 @@ export default function DMPage() {
     document.addEventListener('click', handleUnlock);
     return () => document.removeEventListener('click', handleUnlock);
   }, []);
+
+  useEffect(() => {
+    if (messages.length > lastMessageCount.current) {
+      scrollToBottom();
+    }
+    lastMessageCount.current = messages.length;
+  }, [messages]);
 
   useEffect(() => {
     async function fetchConversations() {
@@ -525,7 +538,7 @@ export default function DMPage() {
                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-gray-300"><Linkify text={msg.content} /></p>
+                <p className="text-gray-300"><Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} /></p>
               </div>
             </div>
           ))}

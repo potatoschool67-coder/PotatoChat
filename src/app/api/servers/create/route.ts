@@ -14,7 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { name } = await req.json();
+    const { name, isPrivate, password } = await req.json();
     if (!name) {
       return NextResponse.json({ error: 'Server name is required' }, { status: 400 });
     }
@@ -27,24 +27,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Server name already exists' }, { status: 400 });
     }
 
-    const userId = payload.userId as string;
-
-    const server = await prisma.server.create({
-      data: {
-        name: name.toLowerCase(),
-        members: {
-          create: {
-            userId,
-            role: 'ADMIN',
-          },
-        },
-        channels: {
-          create: {
-            name: 'general',
-            type: 'TEXT',
-          },
+    const serverCreateData: any = {
+      name: name.toLowerCase(),
+      isPrivate: isPrivate === true,
+      members: {
+        create: {
+          userId: payload.userId as string,
+          role: 'ADMIN',
         },
       },
+      channels: {
+        create: {
+          name: 'general',
+          type: 'TEXT',
+        },
+      },
+    };
+
+    if (isPrivate && password) {
+      serverCreateData.password = password;
+    }
+
+    const server = await prisma.server.create({
+      data: serverCreateData,
       include: {
         channels: true,
       },

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthToken, verifyToken } from '@/lib/auth';
+import { encodeMessage } from '@/lib/messageEncoding';
 
 export async function GET(req: Request) {
   try {
@@ -68,7 +69,8 @@ export async function POST(req: Request) {
 
     const message = await prisma.message.create({
       data: {
-        content,
+        content: encodeMessage(content),
+        isEncrypted: true,
         userId,
         recipientId,
       },

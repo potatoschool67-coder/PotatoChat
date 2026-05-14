@@ -7,6 +7,7 @@ import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
+import { decodeMessage } from '@/lib/messageEncoding';
 
 interface Message {
   id: string;
@@ -53,6 +54,13 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   };
 
   const lastMsgCountRef = useRef(0);
+
+  useEffect(() => {
+    if (messages.length > lastMsgCountRef.current) {
+      scrollToBottom();
+    }
+    lastMsgCountRef.current = messages.length;
+  }, [messages]);
 
   useEffect(() => {
     ensureAudioContext();
@@ -302,7 +310,7 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
-              <p className="text-gray-300"><Linkify text={msg.content} /></p>
+              <p className="text-gray-300"><Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} /></p>
             </div>
           </div>
         ))}

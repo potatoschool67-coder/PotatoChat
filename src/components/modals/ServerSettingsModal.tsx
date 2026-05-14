@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Image } from 'lucide-react';
+import { X, Image, Lock, Globe } from 'lucide-react';
 
 interface ServerSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  server: { id: string; name: string; icon?: string | null } | null;
+  server: { id: string; name: string; icon?: string | null; isPrivate?: boolean } | null;
   onUpdate: (newName: string, newIcon: string) => void;
 }
 
@@ -92,6 +92,42 @@ export default function ServerSettingsModal({ isOpen, onClose, server, onUpdate 
               className="w-full bg-[#1e1f22] text-white px-3 py-2 rounded outline-none border border-[#1e1f22] focus:border-[#5865F2]"
             />
           </div>
+
+          {server?.isPrivate && (
+            <div className="mb-4 p-3 bg-[#1e1f22] rounded border border-[#5865F2]">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-gray-300">
+                  <Lock size={16} className="text-[#5865F2]" />
+                  <span className="text-sm">This server is private</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm('Are you sure you want to make this server public? You cannot revert this action.')) return;
+                    try {
+                      const res = await fetch(`/api/servers/${server.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ makePublic: true }),
+                      });
+                      if (res.ok) {
+                        setSuccess('Server is now public');
+                        window.location.reload();
+                      } else {
+                        const data = await res.json();
+                        setError(data.error || 'Failed to make server public');
+                      }
+                    } catch (err) {
+                      setError('Something went wrong');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-[#5865F2] hover:bg-[#4752C4] text-white text-sm rounded flex items-center gap-1"
+                >
+                  <Globe size={14} /> Make Public
+                </button>
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
           {success && <p className="text-green-400 text-sm mb-3">{success}</p>}

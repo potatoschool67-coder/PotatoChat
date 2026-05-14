@@ -14,7 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { serverName } = await req.json();
+    const { serverName, password } = await req.json();
     if (!serverName) {
       return NextResponse.json({ error: 'Server name is required' }, { status: 400 });
     }
@@ -25,6 +25,15 @@ export async function POST(req: Request) {
 
     if (!server) {
       return NextResponse.json({ error: 'Server not found' }, { status: 404 });
+    }
+
+    if (server.isPrivate && server.password) {
+      if (!password) {
+        return NextResponse.json({ error: 'Password required', requiresPassword: true }, { status: 403 });
+      }
+      if (password !== server.password) {
+        return NextResponse.json({ error: 'Incorrect password', requiresPassword: true }, { status: 403 });
+      }
     }
 
     const userId = payload.userId as string;
