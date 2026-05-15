@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, MoreHorizontal } from 'lucide-react';
+import { Send, Trash2, MoreHorizontal, Plus } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import MentionAutocomplete from '@/components/utils/MentionAutocomplete';
@@ -12,12 +12,28 @@ import { decodeMessage } from '@/lib/messageEncoding';
 import { highlightMentions } from '@/lib/mentionHighlight';
 import { extractImages, removeImagesFromText } from '@/lib/imageUtils';
 import ImagePreview from '@/components/utils/ImagePreview';
+import PollCreator from './PollCreator';
+import PollMessage from './PollMessage';
+
+interface PollOptionData {
+  id: string;
+  text: string;
+  count: number;
+  voted: boolean;
+}
+
+interface PollData {
+  id: string;
+  question: string;
+  options: PollOptionData[];
+}
 
 interface Message {
   id: string;
   content: string;
   user: { username: string; avatar: string | null; id?: string };
   createdAt: string;
+  poll?: PollData | null;
 }
 
 export default function ChatWindow({ channelId, serverId, channelName = 'general' }: { channelId: string; serverId: string; channelName?: string }) {
@@ -28,6 +44,7 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [showCommandAutocomplete, setShowCommandAutocomplete] = useState(false);
   const [openMenuMsgId, setOpenMenuMsgId] = useState<string | null>(null);
+  const [showPollCreator, setShowPollCreator] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const processedRef = useRef(false);
 
@@ -407,44 +424,52 @@ const handleInputChange = (value: string) => {
                   </div>
                 )}
               </div>
-              <p className="text-gray-300">
-                  {(() => {
-                    const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
-                    const images = extractImages(rawContent);
-                    const textContent = removeImagesFromText(rawContent);
-                    const parts = highlightMentions(textContent);
-                    const mentioned = textContent.includes(`@${currentUser?.username}`) || textContent.includes('@everyone');
-                    return (
-                      <span className={mentioned ? 'bg-[#FBBF24]/10 -mx-2 px-2 rounded block' : ''}>
-                        {parts.map((part, i) => (
-                          part.isMention ? (
-                            <span key={i} className="text-[#5865F2] font-semibold">{part.text}</span>
-                          ) : (
-                            <span key={i}><Linkify text={part.text} /></span>
-                          )
-                        ))}
-                      </span>
-                    );
-                  })()}
-                </p>
-                {(() => {
-                  const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
-                  const images = extractImages(rawContent);
-                  if (images.length === 0) return null;
-                  return (
-                    <div className="mt-2 space-y-2">
-                      {images.map((img, i) => (
-                        <img
-                          key={i}
-                          src={img}
-                          alt="Shared image"
-                          className="max-w-[300px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => window.open(img, '_blank')}
-                        />
-                      ))}
-                    </div>
-                  );
-                })()}
+              {msg.poll ? (
+                <div className="mt-1">
+                  <PollMessage poll={msg.poll} pollId={msg.poll.id} />
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-300">
+                      {(() => {
+                        const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
+                        const images = extractImages(rawContent);
+                        const textContent = removeImagesFromText(rawContent);
+                        const parts = highlightMentions(textContent);
+                        const mentioned = textContent.includes(`@${currentUser?.username}`) || textContent.includes('@everyone');
+                        return (
+                          <span className={mentioned ? 'bg-[#FBBF24]/10 -mx-2 px-2 rounded block' : ''}>
+                            {parts.map((part, i) => (
+                              part.isMention ? (
+                                <span key={i} className="text-[#5865F2] font-semibold">{part.text}</span>
+                              ) : (
+                                <span key={i}><Linkify text={part.text} /></span>
+                              )
+                            ))}
+                          </span>
+                        );
+                      })()}
+                    </p>
+                    {(() => {
+                      const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
+                      const images = extractImages(rawContent);
+                      if (images.length === 0) return null;
+                      return (
+                        <div className="mt-2 space-y-2">
+                          {images.map((img, i) => (
+                            <img
+                              key={i}
+                              src={img}
+                              alt="Shared image"
+                              className="max-w-[300px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(img, '_blank')}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })()}
+                </>
+              )}
             </div>
           </div>
         ))}
@@ -456,6 +481,14 @@ const handleInputChange = (value: string) => {
         <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} onShowChange={setShowCommandAutocomplete} />
         <MentionAutocomplete inputValue={input} inputRef={inputRef} onInsert={setInput} serverId={serverId} />
         <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
+          <button
+            type="button"
+            onClick={() => setShowPollCreator(true)}
+            className="text-gray-400 hover:text-white flex-shrink-0"
+            title="Create Poll"
+          >
+            <Plus size={20} />
+          </button>
           <input
             ref={inputRef}
             value={input}
@@ -475,6 +508,13 @@ const handleInputChange = (value: string) => {
           </button>
         </div>
       </form>
+      {showPollCreator && (
+        <PollCreator
+          channelId={channelId}
+          onClose={() => setShowPollCreator(false)}
+          onCreated={() => { fetchMessages(); }}
+        />
+      )}
     </div>
   );
 }

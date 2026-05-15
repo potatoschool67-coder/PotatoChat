@@ -25,17 +25,58 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Channel ID or name is required' }, { status: 400 });
     }
 
+    const token = await getAuthToken();
+    let currentUserId = '';
+    if (token) {
+      const payload = await verifyToken(token);
+      if (payload?.userId) {
+        currentUserId = payload.userId as string;
+      }
+    }
+
     const messages = await prisma.message.findMany({
       where: whereClause,
       include: {
         user: {
           select: { id: true, username: true, avatar: true },
         },
+        poll: {
+          include: {
+            options: {
+              orderBy: { id: 'asc' },
+              include: {
+                _count: {
+                  select: { votes: true },
+                },
+              },
+            },
+            votes: currentUserId ? {
+              where: { userId: currentUserId },
+            } : false,
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    return NextResponse.json(messages);
+    const formatted = messages.map((msg) => {
+      const formatted: any = { ...msg, poll: null };
+      if (msg.poll) {
+        formatted.poll = {
+          id: msg.poll.id,
+          question: msg.poll.question,
+          options: msg.poll.options.map((opt) => ({
+            id: opt.id,
+            text: opt.text,
+            count: opt._count.votes,
+            voted: Array.isArray(msg.poll?.votes) && msg.poll.votes.some((v: any) => v.optionId === opt.id),
+          })),
+        };
+      }
+      return formatted;
+    });
+
+    return NextResponse.json(formatted);
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

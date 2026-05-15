@@ -21,6 +21,7 @@ model User {
   messages      Message[]
   relationships Relationship[] @relation("UserToRelationship")
   receivedMessages Message[] @relation("UserToRelationship")
+  votes         Vote[]
 }
 
 model Server {
@@ -63,6 +64,8 @@ model Message {
   recipient   User?     @relation("UserToRelationship", fields: [recipientId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  poll        Poll?
 }
 
 model Relationship {
@@ -71,6 +74,39 @@ model Relationship {
   user        User      @relation("UserToRelationship", fields: [userId], references: [id])
   recipientId String
   createdAt   DateTime  @default(now())
+}
+
+model Poll {
+  id        String   @id @default(cuid())
+  question  String
+  messageId String   @unique
+  createdAt DateTime @default(now())
+
+  message Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  options PollOption[]
+  votes   Vote[]
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  pollId String
+  text   String
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes  Vote[]
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  optionId  String
+  userId    String
+  pollId    String
+  createdAt DateTime @default(now())
+
+  option PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id])
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, userId])
 }
 
 model ServerMember {
