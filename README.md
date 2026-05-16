@@ -165,7 +165,6 @@ PotatoChat/
 
 The user "hi" has access to admin commands in DMs:
 - `/ping` - Check bot status
-- `/potatobot` - Control PotatoBot
 - `/servers` - List all servers
 - `/users` - List all users
 - `/ban` / `/unban` - Ban/unban users

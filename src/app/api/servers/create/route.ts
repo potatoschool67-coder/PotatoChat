@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       members: {
         create: {
           userId: payload.userId as string,
-          role: 'ADMIN',
+          role: 'OWNER',
         },
       },
       channels: {

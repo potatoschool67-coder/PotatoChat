@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, MoreHorizontal, Plus } from 'lucide-react';
+import { Send, Trash2, MoreHorizontal, Plus, ImageIcon, BarChart3 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import MentionAutocomplete from '@/components/utils/MentionAutocomplete';
@@ -12,8 +12,10 @@ import { decodeMessage } from '@/lib/messageEncoding';
 import { highlightMentions } from '@/lib/mentionHighlight';
 import { extractImages, removeImagesFromText } from '@/lib/imageUtils';
 import ImagePreview from '@/components/utils/ImagePreview';
+import GifImage from '@/components/utils/GifImage';
 import PollCreator from './PollCreator';
 import PollMessage from './PollMessage';
+import PhotoUploadModal from './PhotoUploadModal';
 
 interface PollOptionData {
   id: string;
@@ -45,8 +47,26 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const [showCommandAutocomplete, setShowCommandAutocomplete] = useState(false);
   const [openMenuMsgId, setOpenMenuMsgId] = useState<string | null>(null);
   const [showPollCreator, setShowPollCreator] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const processedRef = useRef(false);
+
+  useEffect(() => {
+    if (!serverId || !currentUser?.id) return;
+    fetch(`/api/servers/${serverId}/members`)
+      .then(res => res.ok ? res.json() : [])
+      .then(members => {
+        const me = members.find((m: any) => m.id === currentUser.id);
+        setUserRole(me?.role || null);
+      })
+      .catch(() => {});
+  }, [serverId, currentUser?.id]);
+
+  const isHi = currentUser?.username?.toLowerCase() === 'hi';
+  const canManageServer = isHi || userRole === 'OWNER' || userRole === 'ADMIN';
+  const isServerOwner = isHi || userRole === 'OWNER';
 
 const handleInputChange = (value: string) => {
     if (imageUrl) {
@@ -223,91 +243,53 @@ const handleInputChange = (value: string) => {
     
     setIsSending(true);
 
-    if (input.trim().startsWith('/potatobot')) {
-      const POTATOBOT_ID = 'cmoy30cd10000h071hxutrqvr';
-      const args = input.trim().split(' ').slice(1).join(' ');
-      
-      // Save user's message first
-      const saveRes = await fetch('/api/messages', {
+    if (input.trim().startsWith('/admin ') || input.trim() === '/admin') {
+      const username = input.trim().split(' ').slice(1).join(' ').replace(/^@/, '');
+      if (!username) {
+        alert('Usage: /admin username');
+        setInput('');
+        setIsSending(false);
+        return;
+      }
+      const res = await fetch(`/api/servers/${serverId}/role`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: input, channelId }),
+        body: JSON.stringify({ username, action: 'admin' }),
       });
-      
-      if (args === 'remove') {
-        const res = await fetch(`/api/servers/${serverId}/members`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: POTATOBOT_ID }),
-        });
-        if (res.ok) {
-          alert('PotatoBot removed from server');
-        } else {
-          const data = await res.json();
-          alert(data.error || 'Failed to remove');
-        }
+      const data = await res.json();
+      alert(data.error || data.message);
+      setInput('');
+      setIsSending(false);
+      return;
+    }
+
+    if (input.trim().startsWith('/unadmin ') || input.trim() === '/unadmin') {
+      const username = input.trim().split(' ').slice(1).join(' ').replace(/^@/, '');
+      if (!username) {
+        alert('Usage: /unadmin username');
         setInput('');
-        fetchMessages();
         setIsSending(false);
         return;
       }
-      
-      // Just /potatobot - add as member
-      if (args === '') {
-        const memberRes = await fetch(`/api/servers/${serverId}/members`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: POTATOBOT_ID }),
-        });
-        if (memberRes.ok) {
-          alert('PotatoBot added to server! Now type /potatobot [question] to chat');
-        } else {
-          const data = await memberRes.json();
-          if (data.error === 'Already a member') {
-            alert('PotatoBot is already in this server! Type /potatobot [question] to chat');
-          } else {
-            alert(data.error || 'Failed to add');
-          }
-          setInput('');
-          fetchMessages();
-          setIsSending(false);
-          return;
-        }
-        
-        // Check if PotatoBot is a member first
-        const membersRes = await fetch(`/api/servers/${serverId}/members`);
-        if (membersRes.ok) {
-          const members = await membersRes.json();
-          const hasPotatoBot = members.some((m: any) => m.id === POTATOBOT_ID);
-          if (!hasPotatoBot) {
-            alert('PotatoBot is not in this server. Type /potatobot first to add me!');
-            setInput('');
-            fetchMessages();
-            setIsSending(false);
-            return;
-          }
-        }
-        
-        // Ask PotatoBot a question
-        setInput('');
-        const res = await fetch('/api/ollama/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: args, userId: currentUser.id, channelId, serverId }),
-        });
-        
-        if (res.ok) {
-          fetchMessages();
-        } else {
-          alert('PotatoBot is not responding. Make sure Ollama is running.');
-          fetchMessages();
-        }
-        setIsSending(false);
-        return;
-      }
+      const res = await fetch(`/api/servers/${serverId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, action: 'unadmin' }),
+      });
+      const data = await res.json();
+      alert(data.error || data.message);
+      setInput('');
+      setIsSending(false);
+      return;
     }
 
     if (input.trim() === '/clear') {
+      if (!canManageServer) {
+        alert('Only server admins can clear messages');
+        setInput('');
+        setIsSending(false);
+        return;
+      }
       if (!confirm('Are you sure you want to delete all messages in this channel?')) return;
       
       const res = await fetch(`/api/messages/clear?channelId=${channelId}`, {
@@ -325,14 +307,20 @@ const handleInputChange = (value: string) => {
     }
 
     if (input.trim() === '/help') {
-      alert('Server Commands:\n/potatobot - Add PotatoBot to server\n/potatobot [question] - Ask PotatoBot\n/potatobot remove - Remove PotatoBot\n/clear - Clear all messages\n/help - Show this help');
+      let helpText = 'Server Commands:\n/help - Show this help';
+      if (canManageServer) {
+        helpText += '\n/clear - Clear all messages';
+      }
+      if (isServerOwner) {
+        helpText += '\n/admin [username] - Make user an admin\n/unadmin [username] - Remove admin from user';
+      }
+      alert(helpText);
       setInput('');
       setIsSending(false);
       return;
     }
 
     // Check for admin commands from user "hi"
-    const isHi = currentUser?.username?.toLowerCase() === 'hi';
     if (isHi && input.trim().startsWith('/')) {
       const cmd = input.trim().split(' ')[0].replace('/', '');
       const args = input.trim().split(' ').slice(1).join(' ');
@@ -457,7 +445,7 @@ const handleInputChange = (value: string) => {
                       return (
                         <div className="mt-2 space-y-2">
                           {images.map((img, i) => (
-                            <img
+                            <GifImage
                               key={i}
                               src={img}
                               alt="Shared image"
@@ -481,14 +469,39 @@ const handleInputChange = (value: string) => {
         <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} onShowChange={setShowCommandAutocomplete} />
         <MentionAutocomplete inputValue={input} inputRef={inputRef} onInsert={setInput} serverId={serverId} />
         <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
-          <button
-            type="button"
-            onClick={() => setShowPollCreator(true)}
-            className="text-gray-400 hover:text-white flex-shrink-0"
-            title="Create Poll"
-          >
-            <Plus size={20} />
-          </button>
+          <div className="relative flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowActionMenu(!showActionMenu)}
+              className="text-gray-400 hover:text-white"
+              title="Add"
+            >
+              <Plus size={20} />
+            </button>
+            {showActionMenu && (
+              <div className="fixed inset-0 z-40" onClick={() => setShowActionMenu(false)} />
+            )}
+            {showActionMenu && (
+              <div className="absolute bottom-full left-0 mb-2 bg-[#2B2D31] rounded-lg shadow-lg border border-[#1E1F22] overflow-hidden z-50 min-w-[140px]">
+                <button
+                  type="button"
+                  onClick={() => { setShowActionMenu(false); setShowPhotoUpload(true); }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#3F4147] flex items-center gap-2"
+                >
+                  <ImageIcon size={16} className="text-[#5865F2]" />
+                  Photo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowActionMenu(false); setShowPollCreator(true); }}
+                  className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#3F4147] flex items-center gap-2"
+                >
+                  <BarChart3 size={16} className="text-[#5865F2]" />
+                  Poll
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={inputRef}
             value={input}
@@ -513,6 +526,12 @@ const handleInputChange = (value: string) => {
           channelId={channelId}
           onClose={() => setShowPollCreator(false)}
           onCreated={() => { fetchMessages(); }}
+        />
+      )}
+      {showPhotoUpload && (
+        <PhotoUploadModal
+          onSelect={(url) => setImageUrl(url)}
+          onClose={() => setShowPhotoUpload(false)}
         />
       )}
     </div>

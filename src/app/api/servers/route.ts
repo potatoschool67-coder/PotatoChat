@@ -23,7 +23,7 @@ export async function POST(req: Request) {
         members: {
           create: {
             userId,
-            role: 'ADMIN',
+            role: 'OWNER',
           },
         },
       },

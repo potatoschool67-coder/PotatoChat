@@ -41,7 +41,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [isServerSettingsOpen, setIsServerSettingsOpen] = useState(false);
   const [serverChannels, setServerChannels] = useState<Record<string, Channel[]>>({});
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [members, setMembers] = useState<{id: string; username: string; avatar: string | null; status?: string}[]>([]);
+  const [members, setMembers] = useState<{id: string; username: string; avatar: string | null; status?: string; role?: string}[]>([]);
   const [recentNotifications, setRecentNotifications] = useState<{type: string; from: string; preview: string; time: string}[]>([]);
   const [draggedServer, setDraggedServer] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -518,6 +518,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return chans?.[0]?.id || '';
   };
 
+  const currentUserRole = members.find(m => m.id === user?.id)?.role;
+  const isHi = user?.username?.toLowerCase() === 'hi';
+  const canManageChannels = isHi || currentUserRole === 'OWNER' || currentUserRole === 'ADMIN';
+
   return (
     <div className="flex h-screen w-full bg-[#313338] text-white overflow-hidden">
       {/* Server Sidebar - Always show when logged in */}
@@ -610,7 +614,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         isOpen={isServerSettingsOpen}
         onClose={() => setIsServerSettingsOpen(false)}
         server={activeServer}
-        isOwner={user?.username?.toLowerCase() === 'hi'}
+        isOwner={user?.username?.toLowerCase() === 'hi' || members.some(m => m.id === user?.id && m.role === 'OWNER')}
         onUpdate={(newName, newIcon) => {
           setActiveServer({ ...activeServer!, name: newName, icon: newIcon });
           setServers(servers.map(s => s.id === activeServer?.id ? { ...s, name: newName, icon: newIcon } : s));
@@ -686,7 +690,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1 overflow-y-auto p-3">
             <div className="flex items-center justify-between text-xs font-semibold text-gray-400 uppercase mb-2">
               <span>Text Channels</span>
-              {activeServer && (
+              {activeServer && canManageChannels && (
                 <button 
                   onClick={() => setIsChannelModalOpen(true)}
                   className="hover:text-white transition-colors"
@@ -711,13 +715,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       <span className="ml-auto w-2 h-2 bg-red-500 rounded-full" />
                     )}
                   </Link>
-                  <button
-                    onClick={() => setChannelMenuOpen(channelMenuOpen === channel.id ? null : channel.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-[#3F4147] rounded text-gray-400 hover:text-white"
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
-                  {channelMenuOpen === channel.id && (
+                  {canManageChannels && (
+                    <button
+                      onClick={() => setChannelMenuOpen(channelMenuOpen === channel.id ? null : channel.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-[#3F4147] rounded text-gray-400 hover:text-white"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+                  )}
+                  {channelMenuOpen === channel.id && canManageChannels && (
                     <div className="absolute left-0 top-full mt-1 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden z-50 min-w-[120px]">
                       <button
                         onClick={() => { setRenameChannelId(channel.id); setRenameChannelName(channel.name); setIsRenameModalOpen(true); setChannelMenuOpen(null); }}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getAuthToken, verifyToken } from '@/lib/auth';
 
 export async function GET(req: Request) {
   try {
@@ -22,6 +23,42 @@ export async function GET(req: Request) {
   }
 }
 
+async function checkChannelAuth(channelId: string): Promise<{ userId: string; serverId: string } | NextResponse> {
+  const token = await getAuthToken();
+  if (!token) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 }) as any;
+  }
+
+  const payload = await verifyToken(token);
+  if (!payload || !payload.userId) {
+    return NextResponse.json({ error: 'Invalid session' }, { status: 401 }) as any;
+  }
+
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+  });
+
+  if (!channel) {
+    return NextResponse.json({ error: 'Channel not found' }, { status: 404 }) as any;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId as string },
+  });
+
+  const isHi = user?.username?.toLowerCase() === 'hi';
+
+  const membership = await prisma.serverMember.findFirst({
+    where: { serverId: channel.serverId, userId: payload.userId as string },
+  });
+
+  if (!isHi && (!membership || (membership.role !== 'OWNER' && membership.role !== 'ADMIN'))) {
+    return NextResponse.json({ error: 'Only admins can manage channels' }, { status: 403 }) as any;
+  }
+
+  return { userId: payload.userId as string, serverId: channel.serverId };
+}
+
 export async function PUT(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -30,6 +67,9 @@ export async function PUT(req: Request) {
     if (!channelId) {
       return NextResponse.json({ error: 'Channel ID is required' }, { status: 400 });
     }
+
+    const auth = await checkChannelAuth(channelId);
+    if (auth instanceof NextResponse) return auth;
 
     const { name } = await req.json();
 
@@ -53,6 +93,9 @@ export async function DELETE(req: Request) {
     if (!channelId) {
       return NextResponse.json({ error: 'Channel ID is required' }, { status: 400 });
     }
+
+    const auth = await checkChannelAuth(channelId);
+    if (auth instanceof NextResponse) return auth;
 
     await prisma.message.deleteMany({ where: { channelId } });
     await prisma.channel.delete({ where: { id: channelId } });

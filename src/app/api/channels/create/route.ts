@@ -22,6 +22,12 @@ export async function POST(req: Request) {
 
     const userId = payload.userId as string;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    const isHi = user?.username?.toLowerCase() === 'hi';
+
     const membership = await prisma.serverMember.findFirst({
       where: {
         serverId,
@@ -31,6 +37,10 @@ export async function POST(req: Request) {
 
     if (!membership) {
       return NextResponse.json({ error: 'You are not a member of this server' }, { status: 403 });
+    }
+
+    if (!isHi && membership.role !== 'OWNER' && membership.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Only admins can create channels' }, { status: 403 });
     }
 
     const channel = await prisma.channel.create({

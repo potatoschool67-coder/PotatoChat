@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart3 } from 'lucide-react';
 import PollResults from './PollResults';
 
@@ -27,6 +27,17 @@ export default function PollMessage({ poll, pollId }: PollMessageProps) {
   const [totalVotes, setTotalVotes] = useState(poll.options.reduce((s, o) => s + o.count, 0));
   const [voting, setVoting] = useState(false);
   const [showResults, setShowResults] = useState(false);
+
+  useEffect(() => {
+    setOptions((prev) => {
+      const updated = prev.map((opt) => {
+        const serverOpt = poll.options.find((o) => o.id === opt.id);
+        return serverOpt ? { ...opt, count: serverOpt.count } : opt;
+      });
+      setTotalVotes(updated.reduce((s, o) => s + o.count, 0));
+      return updated;
+    });
+  }, [poll]);
 
   const handleVote = async (optionId: string) => {
     setVoting(true);

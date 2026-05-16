@@ -16,8 +16,8 @@ interface CommandAutocompleteProps {
 }
 
 const SERVER_COMMANDS: Command[] = [
-  { name: '/potatobot', description: 'Add PotatoBot to server' },
-  { name: '/potatobot remove', description: 'Remove PotatoBot' },
+  { name: '/admin', description: 'Make user an admin' },
+  { name: '/unadmin', description: 'Remove admin role' },
   { name: '/clear', description: 'Clear messages' },
   { name: '/help', description: 'Show help' },
 ];
@@ -29,9 +29,6 @@ const DM_COMMANDS: Command[] = [
 
 const ADMIN_COMMANDS: Command[] = [
   { name: '/ping', description: 'Check bot status' },
-  { name: '/potatobot', description: 'Control PotatoBot' },
-  { name: '/potatobot start', description: 'Start Ollama' },
-  { name: '/potatobot stop', description: 'Stop Ollama' },
   { name: '/loginuser', description: 'Login as user' },
   { name: '/servers', description: 'List servers' },
   { name: '/users', description: 'List users' },

@@ -29,8 +29,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ serverId
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    // Check if user is admin for sensitive changes
-    if (membership.role !== 'ADMIN') {
+    // Check if user is admin or owner for sensitive changes
+    if (membership.role !== 'ADMIN' && membership.role !== 'OWNER') {
       return NextResponse.json({ error: 'Only admins can make this change' }, { status: 403 });
     }
 

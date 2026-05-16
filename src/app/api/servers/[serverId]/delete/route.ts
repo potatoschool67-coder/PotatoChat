@@ -14,15 +14,26 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ serve
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
+    const { serverId } = await params;
+    const userId = payload.userId as string;
+
     const user = await prisma.user.findUnique({
-      where: { id: payload.userId as string },
+      where: { id: userId },
     });
 
-    if (!user || user.username.toLowerCase() !== 'hi') {
-      return NextResponse.json({ error: 'Only the owner can delete servers' }, { status: 403 });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const { serverId } = await params;
+    const isHi = user.username.toLowerCase() === 'hi';
+    const membership = await prisma.serverMember.findFirst({
+      where: { serverId, userId },
+    });
+    const isOwner = membership?.role === 'OWNER';
+
+    if (!isHi && !isOwner) {
+      return NextResponse.json({ error: 'Only the server owner can delete this server' }, { status: 403 });
+    }
     await prisma.channel.deleteMany({ where: { serverId } });
     await prisma.serverMember.deleteMany({ where: { serverId } });
     await prisma.server.delete({ where: { id: serverId } });

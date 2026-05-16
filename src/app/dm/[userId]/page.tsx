@@ -12,6 +12,7 @@ import { ensureAudioContext, unlockAudio } from '@/lib/audio';
 import { decodeMessage } from '@/lib/messageEncoding';
 import { extractImages, removeImagesFromText } from '@/lib/imageUtils';
 import ImagePreview from '@/components/utils/ImagePreview';
+import GifImage from '@/components/utils/GifImage';
 
 interface Message {
   id: string;
@@ -54,8 +55,6 @@ export default function DMPage() {
 const handleInputChange = (value: string) => {
     setInput(value);
   };
-
-  const OLLAMA_USER_ID = 'cmoy30cd10000h071hxutrqvr';
 
   const prevMessages = useRef<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -313,7 +312,7 @@ const handleInputChange = (value: string) => {
       const cmd = input.trim().toLowerCase().split(' ')[0];
       
       if (cmd === '/help') {
-        alert('Admin Commands:\n/ping - Check bot status\n/ollama - Check Ollama status\n/potatobot - Get/set model\n/potatobot start - Start Ollama\n/potatobot stop - Stop Ollama\n/servers - List all servers\n/users - List all users\n/ban [username] - Ban a user\n/unban [username] - Unban a user\n/userdelete [username] - Delete a user\n/serverdelete [servername] - Delete a server\n/dmuser [message] [username] - Send DM to user\n/loginuser [username] - Login as user\n/ownerbadge on - Enable owner badge\n/ownerbadge off - Disable owner badge\n/clear - Clear messages\n/help - Show this help');
+        alert('Admin Commands:\n/ping - Check bot status\n/servers - List all servers\n/users - List all users\n/ban [username] - Ban a user\n/unban [username] - Unban a user\n/userdelete [username] - Delete a user\n/serverdelete [servername] - Delete a server\n/dmuser [message] [username] - Send DM to user\n/loginuser [username] - Login as user\n/ownerbadge on - Enable owner badge\n/ownerbadge off - Disable owner badge\n/clear - Clear messages\n/help - Show this help');
         setInput('');
         return;
       }
@@ -321,7 +320,7 @@ const handleInputChange = (value: string) => {
       const parts = input.trim().split(' ');
       const commandName = parts[0].replace('/', '');
       const args = parts.slice(1).join(' ');
-      const validCommands = ['ping', 'ollama', 'potatobot', 'servers', 'users', 'ban', 'unban', 'userdelete', 'serverdelete', 'dmuser', 'loginuser', 'ownerbadge'];
+      const validCommands = ['ping', 'servers', 'users', 'ban', 'unban', 'userdelete', 'serverdelete', 'dmuser', 'loginuser', 'ownerbadge'];
       
       if (validCommands.includes(commandName)) {
         setInput('');
@@ -379,30 +378,6 @@ const handleInputChange = (value: string) => {
     if (input.trim() === '/help') {
       alert('Available commands:\n/clear - Delete all messages in this conversation\n/help - Show this help message');
       setInput('');
-      setIsSending(false);
-      return;
-    }
-
-    if (currentUserId === OLLAMA_USER_ID) {
-      const msg = imageUrl ? `${input} ${imageUrl}`.trim() : input;
-      setInput('');
-      setImageUrl(null);
-      
-      await fetch('/api/messages/dm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: msg, recipientId: currentUserId }),
-      });
-
-      const res = await fetch('/api/ollama/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, userId: user?.id }),
-      });
-
-      if (res.ok) {
-        fetchMessages();
-      }
       setIsSending(false);
       return;
     }
@@ -597,7 +572,7 @@ const handleInputChange = (value: string) => {
                   return (
                     <div className="mt-2 space-y-2">
                       {images.map((img, i) => (
-                        <img
+                        <GifImage
                           key={i}
                           src={img}
                           alt="Shared image"
