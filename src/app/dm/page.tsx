@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, ArrowLeft, Search, Plus, X, Settings, LogOut } from 'lucide-react';
+import { MessageSquare, ArrowLeft, Search, Plus, X, Settings, LogOut, User } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import Avatar from '@/components/utils/Avatar';
 import SettingsModal from '@/components/modals/SettingsModal';
+import UserProfileModal from '@/components/modals/UserProfileModal';
 
 interface Conversation {
   userId: string;
@@ -32,6 +33,7 @@ export default function DMHomePage() {
   const [isSearching, setIsSearching] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [recentNotifications, setRecentNotifications] = useState<{type: string; from: string; preview: string; time: string}[]>([]);
   const [unreadDMs, setUnreadDMs] = useState<Record<string, boolean>>({});
@@ -264,6 +266,12 @@ fetchConversations();
           </div>
           {showUserMenu && (
             <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden">
+              <button
+                onClick={() => { setProfileUserId(user?.id || null); setShowUserMenu(false); }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
+              >
+                <User size={14} /> Profile
+              </button>
               <button 
                 onClick={() => { setIsSettingsModalOpen(true); setShowUserMenu(false); }}
                 className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
@@ -344,6 +352,13 @@ fetchConversations();
         onClose={() => setIsSettingsModalOpen(false)}
         onUpdate={refreshUser}
       />
+
+      {profileUserId && (
+        <UserProfileModal
+          userId={profileUserId}
+          onClose={() => setProfileUserId(null)}
+        />
+      )}
     </div>
   );
 }

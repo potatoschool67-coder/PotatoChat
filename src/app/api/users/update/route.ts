@@ -14,7 +14,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { username, avatar, theme } = await req.json();
+    const { username, avatar, theme, bio } = await req.json();
     const userId = payload.userId as string;
 
     const existingUser = await prisma.user.findUnique({ where: { id: userId } });
@@ -38,12 +38,14 @@ export async function PUT(req: Request) {
         ...(username && { username: username.toLowerCase() }),
         ...(avatar !== undefined && { avatar }),
         ...(theme && { theme }),
+        ...(bio !== undefined && { bio }),
       },
       select: {
         id: true,
         username: true,
         avatar: true,
         theme: true,
+        bio: true,
       },
     });
 

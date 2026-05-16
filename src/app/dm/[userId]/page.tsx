@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut, MoreHorizontal } from 'lucide-react';
+import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut, MoreHorizontal, User } from 'lucide-react';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
 import SettingsModal from '@/components/modals/SettingsModal';
+import UserContextMenu from '@/components/chat/UserContextMenu';
+import UserProfileModal from '@/components/modals/UserProfileModal';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import { useAuth } from '@/context/AuthContext';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
@@ -48,6 +50,8 @@ export default function DMPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ userId: string; username: string; x: number; y: number } | null>(null);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [otherUnreadCount, setOtherUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<Record<string, boolean>>({});
   const [isSending, setIsSending] = useState(false);
@@ -484,6 +488,12 @@ const handleInputChange = (value: string) => {
           </div>
           {showUserMenu && (
             <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden">
+              <button
+                onClick={() => { setProfileUserId(user?.id || null); setShowUserMenu(false); }}
+                className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
+              >
+                <User size={14} /> Profile
+              </button>
               <button 
                 onClick={() => { setIsSettingsModalOpen(true); setShowUserMenu(false); }}
                 className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
@@ -534,10 +544,23 @@ const handleInputChange = (value: string) => {
           }}>
           {messages.map((msg) => (
             <div key={msg.id} className="flex gap-4 items-start">
-              <Avatar src={msg.user.avatar} name={msg.user.username} size={40} />
+              <button
+                onClick={(e) => {
+                  setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
+                }}
+              >
+                <Avatar src={msg.user.avatar} name={msg.user.username} size={40} />
+              </button>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-white">{msg.user.username}</span>
+                  <button
+                    onClick={(e) => {
+                      setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
+                    }}
+                    className="font-bold text-white hover:underline hover:text-[#5865F2]"
+                  >
+                    {msg.user.username}
+                  </button>
                   <span className="text-xs text-gray-400">
                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
@@ -635,6 +658,23 @@ const handleInputChange = (value: string) => {
           onClose={() => setIsSettingsModalOpen(false)}
           onUpdate={refreshUser}
         />
+
+        {contextMenu && (
+          <UserContextMenu
+            userId={contextMenu.userId}
+            username={contextMenu.username}
+            position={{ x: contextMenu.x, y: contextMenu.y }}
+            onViewProfile={(id) => setProfileUserId(id)}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
+
+        {profileUserId && (
+          <UserProfileModal
+            userId={profileUserId}
+            onClose={() => setProfileUserId(null)}
+          />
+        )}
       </div>
     </div>
   );

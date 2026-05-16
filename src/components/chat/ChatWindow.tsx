@@ -16,6 +16,8 @@ import GifImage from '@/components/utils/GifImage';
 import PollCreator from './PollCreator';
 import PollMessage from './PollMessage';
 import PhotoUploadModal from './PhotoUploadModal';
+import UserContextMenu from './UserContextMenu';
+import UserProfileModal from '@/components/modals/UserProfileModal';
 
 interface PollOptionData {
   id: string;
@@ -50,6 +52,8 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ userId: string; username: string; x: number; y: number } | null>(null);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const processedRef = useRef(false);
 
@@ -384,10 +388,27 @@ const handleInputChange = (value: string) => {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => (
           <div key={msg.id} className="flex gap-4 items-start">
-            <Avatar src={msg.user?.avatar} name={msg.user?.username || 'User'} size={40} />
+            <button
+              onClick={(e) => {
+                if (msg.user?.id) {
+                  setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
+                }
+              }}
+            >
+              <Avatar src={msg.user?.avatar} name={msg.user?.username || 'User'} size={40} />
+            </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-white">{msg.user?.username || 'User'}</span>
+                <button
+                  onClick={(e) => {
+                    if (msg.user?.id) {
+                      setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
+                    }
+                  }}
+                  className="font-bold text-white hover:underline hover:text-[#5865F2]"
+                >
+                  {msg.user?.username || 'User'}
+                </button>
                 <span className="text-xs text-gray-400">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
@@ -532,6 +553,23 @@ const handleInputChange = (value: string) => {
         <PhotoUploadModal
           onSelect={(url) => setImageUrl(url)}
           onClose={() => setShowPhotoUpload(false)}
+        />
+      )}
+
+      {contextMenu && (
+        <UserContextMenu
+          userId={contextMenu.userId}
+          username={contextMenu.username}
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onViewProfile={(id) => setProfileUserId(id)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {profileUserId && (
+        <UserProfileModal
+          userId={profileUserId}
+          onClose={() => setProfileUserId(null)}
         />
       )}
     </div>

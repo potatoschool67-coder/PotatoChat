@@ -10,6 +10,7 @@ datasource db {
 model User {
   id            String    @id @default(cuid())
   username      String    @unique
+  bio           String?
   password      String
   avatar        String?
   status        String    @default("offline")
@@ -43,13 +44,24 @@ model Server {
 model Channel {
   id          String    @id @default(cuid())
   name        String
-  type         String    @default("TEXT")
+  type        String    @default("TEXT")
   serverId    String
+  isPrivate   Boolean   @default(false)
   server      Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   messages    Message[]
+  permissions ChannelPermission[]
+}
+
+model ChannelPermission {
+  id        String  @id @default(cuid())
+  channelId String
+  userId    String
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
 }
 
 model Message {

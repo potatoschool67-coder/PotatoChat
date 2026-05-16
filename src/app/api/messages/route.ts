@@ -3,6 +3,26 @@ import { prisma } from '@/lib/prisma';
 import { getAuthToken, verifyToken } from '@/lib/auth';
 import { encodeMessage } from '@/lib/messageEncoding';
 
+async function checkChannelAccess(channelId: string, userId: string): Promise<boolean> {
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return false;
+  if (!channel.isPrivate) return true;
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const isHi = user?.username?.toLowerCase() === 'hi';
+  if (isHi) return true;
+
+  const membership = await prisma.serverMember.findFirst({
+    where: { serverId: channel.serverId, userId },
+  });
+  if (membership?.role === 'OWNER' || membership?.role === 'ADMIN') return true;
+
+  const permission = await prisma.channelPermission.findUnique({
+    where: { channelId_userId: { channelId, userId } },
+  });
+  return !!permission;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -31,6 +51,14 @@ export async function GET(req: Request) {
       const payload = await verifyToken(token);
       if (payload?.userId) {
         currentUserId = payload.userId as string;
+      }
+    }
+
+    const resolvedChannelId = whereClause.channelId;
+    if (resolvedChannelId && currentUserId) {
+      const hasAccess = await checkChannelAccess(resolvedChannelId, currentUserId);
+      if (!hasAccess) {
+        return NextResponse.json({ error: 'You do not have access to this channel' }, { status: 403 });
       }
     }
 
@@ -117,6 +145,11 @@ export async function POST(req: Request) {
     }
 
     const userId = payload.userId as string;
+
+    const hasAccess = await checkChannelAccess(finalChannelId, userId);
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'You do not have access to this channel' }, { status: 403 });
+    }
 
     const message = await prisma.message.create({
       data: {

@@ -11,8 +11,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Server ID is required' }, { status: 400 });
     }
 
+    const token = await getAuthToken();
+    let canSeeAll = false;
+    let userId: string | null = null;
+
+    if (token) {
+      const payload = await verifyToken(token);
+      if (payload?.userId) {
+        userId = payload.userId as string;
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        const isHi = user?.username?.toLowerCase() === 'hi';
+        const membership = await prisma.serverMember.findFirst({
+          where: { serverId, userId },
+        });
+        canSeeAll = isHi || membership?.role === 'OWNER' || membership?.role === 'ADMIN';
+      }
+    }
+
+    const where: any = { serverId };
+    if (!canSeeAll) {
+      where.OR = [{ isPrivate: false }];
+      if (userId) {
+        where.OR.push({ permissions: { some: { userId } } });
+      }
+    }
+
     const channels = await prisma.channel.findMany({
-      where: { serverId },
+      where,
       orderBy: { createdAt: 'asc' },
     });
 

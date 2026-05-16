@@ -6,10 +6,12 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import ServerModal from '@/components/modals/ServerModal';
 import ChannelModal from '@/components/modals/ChannelModal';
+import ChannelPermissionsModal from '@/components/modals/ChannelPermissionsModal';
 import SettingsModal from '@/components/modals/SettingsModal';
 import ServerSettingsModal from '@/components/modals/ServerSettingsModal';
+import UserProfileModal from '@/components/modals/UserProfileModal';
 import Avatar from '@/components/utils/Avatar';
-import { Plus, Trash2, LogOut, ArrowLeft, Settings, Cog, Home, MoreHorizontal, Pencil, X, Bell } from 'lucide-react';
+import { Plus, Trash2, LogOut, ArrowLeft, Settings, Cog, Home, MoreHorizontal, Pencil, X, Bell, User, Lock } from 'lucide-react';
 
 interface Server {
   id: string;
@@ -20,6 +22,7 @@ interface Server {
 interface Channel {
   id: string;
   name: string;
+  isPrivate?: boolean;
 }
 
 interface User {
@@ -38,6 +41,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [isServerModalOpen, setIsServerModalOpen] = useState(false);
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isProfileUserId, setIsProfileUserId] = useState<string | null>(null);
+  const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
+  const [channelPermissionsTarget, setChannelPermissionsTarget] = useState<{ id: string; name: string; isPrivate: boolean; allowedIds: string[] } | null>(null);
   const [isServerSettingsOpen, setIsServerSettingsOpen] = useState(false);
   const [serverChannels, setServerChannels] = useState<Record<string, Channel[]>>({});
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -53,6 +59,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [serverNotifications, setServerNotifications] = useState<Record<string, number>>({});
   const [dmNotifications, setDmNotifications] = useState<Record<string, number>>({});
   const [unreadChannels, setUnreadChannels] = useState<Record<string, boolean>>({});
+  const [channelAllowedMemberIds, setChannelAllowedMemberIds] = useState<string[] | null>(null);
   const [dmUnreadCount, setDmUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -264,6 +271,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('click', markRead);
   }, [pathname, user]);
 
+  // Fetch channel permissions for private channels (to filter member list)
+  useEffect(() => {
+    const match = pathname?.match(/\/server\/[^/]+\/channel\/([^/]+)/);
+    if (!match) {
+      setChannelAllowedMemberIds(null);
+      return;
+    }
+    const currentChannelId = match[1];
+    const currentChannel = channels.find(c => c.id === currentChannelId);
+    if (currentChannel?.isPrivate) {
+      fetch(`/api/channels/permissions?channelId=${currentChannelId}`)
+        .then(res => res.ok ? res.json() : [])
+        .then((ids: string[]) => {
+          const ownerAdminIds = members
+            .filter(m => m.role === 'OWNER' || m.role === 'ADMIN')
+            .map(m => m.id);
+          setChannelAllowedMemberIds([...new Set([...ids, ...ownerAdminIds])]);
+        })
+        .catch(() => setChannelAllowedMemberIds(null));
+    } else {
+      setChannelAllowedMemberIds(null);
+    }
+  }, [pathname, channels, members]);
+
   // Save activeServer to localStorage when it changes
   useEffect(() => {
     if (activeServer) {
@@ -450,12 +481,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleCreateChannel = async (name: string) => {
+  const handleCreateChannel = async (name: string, isPrivate?: boolean, allowedUserIds?: string[]) => {
     if (!activeServer) return;
     const res = await fetch('/api/channels/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, serverId: activeServer.id }),
+      body: JSON.stringify({ name, serverId: activeServer.id, isPrivate, allowedUserIds }),
     });
     if (!res.ok) throw new Error('Failed to create channel');
     const channel = await res.json();
@@ -602,13 +633,46 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         isOpen={isChannelModalOpen}
         onClose={() => setIsChannelModalOpen(false)}
         onCreateChannel={handleCreateChannel}
+        members={members}
+        currentUserId={user?.id || ''}
       />
+
+      {channelPermissionsTarget && (
+        <ChannelPermissionsModal
+          isOpen={!!channelPermissionsTarget}
+          onClose={() => setChannelPermissionsTarget(null)}
+          channelId={channelPermissionsTarget.id}
+          channelName={channelPermissionsTarget.name}
+          isPrivate={channelPermissionsTarget.isPrivate}
+          currentAllowedIds={channelPermissionsTarget.allowedIds}
+          members={members}
+          currentUserId={user?.id || ''}
+          onUpdated={() => {
+            // Refresh channels list to reflect permission changes
+            setChannelPermissionsTarget(null);
+          }}
+        />
+      )}
 
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onUpdate={refreshUser}
       />
+
+      {isProfileUserId && (
+        <UserProfileModal
+          userId={isProfileUserId}
+          onClose={() => setIsProfileUserId(null)}
+        />
+      )}
+
+      {profileMemberId && (
+        <UserProfileModal
+          userId={profileMemberId}
+          onClose={() => setProfileMemberId(null)}
+        />
+      )}
 
       <ServerSettingsModal
         isOpen={isServerSettingsOpen}
@@ -710,7 +774,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     href={`/server/${activeServer?.id}/channel/${channel.id}`}
                     className="flex-1 px-2 py-1 rounded hover:bg-[#3F4147] cursor-pointer text-gray-300 hover:text-white flex items-center gap-2"
                   >
-                    <span className="text-gray-500">#</span> {channel.name}
+                    <span className="text-gray-500">#</span>
+                    {channel.isPrivate && <Lock size={10} className="text-gray-500 flex-shrink-0" />}
+                    <span>{channel.name}</span>
                     {unreadChannels[channel.id] && (
                       <span className="ml-auto w-2 h-2 bg-red-500 rounded-full" />
                     )}
@@ -724,12 +790,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     </button>
                   )}
                   {channelMenuOpen === channel.id && canManageChannels && (
-                    <div className="absolute left-0 top-full mt-1 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden z-50 min-w-[120px]">
+                    <div className="absolute left-0 top-full mt-1 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden z-50 min-w-[160px]">
                       <button
                         onClick={() => { setRenameChannelId(channel.id); setRenameChannelName(channel.name); setIsRenameModalOpen(true); setChannelMenuOpen(null); }}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
                       >
                         <Pencil size={12} /> Rename
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setChannelMenuOpen(null);
+                          const res = await fetch(`/api/channels/permissions?channelId=${channel.id}`);
+                          const allowedIds = res.ok ? await res.json() : [];
+                          setChannelPermissionsTarget({ id: channel.id, name: channel.name, isPrivate: channel.isPrivate || false, allowedIds });
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
+                      >
+                        <Lock size={12} /> Permissions
                       </button>
                       <button
                         onClick={() => handleDeleteChannel(channel.id)}
@@ -756,6 +833,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
                       {showUserMenu && (
               <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 bg-[#2B2D31] rounded shadow-lg border border-[#1E1F22] overflow-hidden">
+                <button
+                  onClick={() => { setIsProfileUserId(user?.id || null); setShowUserMenu(false); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
+                >
+                  <User size={14} /> Profile
+                </button>
                 <button 
                   onClick={() => { setIsSettingsModalOpen(true); setShowUserMenu(false); }}
                   className="w-full px-3 py-2 text-left text-sm hover:bg-[#3F4147] flex items-center gap-2 text-gray-300"
@@ -784,11 +867,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {user && activeServer && pathname?.startsWith('/server') && (
           <div className="w-60 bg-[#2B2D31] flex flex-col py-4">
             <div className="px-4 mb-2">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase">Members - {members.length}</h3>
+              <h3 className="text-xs font-semibold text-gray-500 uppercase">
+                {channelAllowedMemberIds ? `Members - ${channelAllowedMemberIds.length}` : `Members - ${members.length}`}
+                {channelAllowedMemberIds && <span className="text-gray-600 font-normal"> (filtered)</span>}
+              </h3>
             </div>
             <div className="flex-1 overflow-y-auto px-2">
-              {members.map(member => (
-                <div key={member.id} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-[#34373F] cursor-pointer">
+              {(channelAllowedMemberIds
+                ? members.filter(m => channelAllowedMemberIds.includes(m.id))
+                : [...members]
+              ).sort((a, b) => {
+                if (a.id === user?.id) return -1;
+                if (b.id === user?.id) return 1;
+                return 0;
+              }).map(member => (
+                <div key={member.id} onClick={() => setProfileMemberId(member.id)} className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-[#34373F] cursor-pointer">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <div className="relative">
                       {member.avatar ? (
@@ -810,7 +903,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {user?.username?.toLowerCase() === 'hi' && member.username.toLowerCase() !== 'hi' && (
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          e.stopPropagation();
                           if (!confirm(`Kick ${member.username} from server?`)) return;
                           const res = await fetch(`/api/servers/${activeServer?.id}/members`, {
                             method: 'DELETE',
@@ -829,7 +923,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         </svg>
                       </button>
                       <button
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          e.stopPropagation();
                           if (!confirm(`DELETE USER "${member.username}"? This cannot be undone!`)) return;
                           const res = await fetch(`/api/users/${member.id}`, { method: 'DELETE' });
                           if (res.ok) {

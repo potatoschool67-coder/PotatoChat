@@ -14,7 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { name, serverId } = await req.json();
+    const { name, serverId, isPrivate, allowedUserIds } = await req.json();
 
     if (!name || !serverId) {
       return NextResponse.json({ error: 'Channel name and server ID are required' }, { status: 400 });
@@ -43,11 +43,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Only admins can create channels' }, { status: 403 });
     }
 
+    const isPrivateChan = isPrivate === true;
+
     const channel = await prisma.channel.create({
       data: {
         name: name.toLowerCase().replace(/\s+/g, '-'),
         type: 'TEXT',
         serverId,
+        isPrivate: isPrivateChan,
+        ...(isPrivateChan && allowedUserIds?.length ? {
+          permissions: {
+            create: [...new Set<string>([...allowedUserIds, userId])].map((uid: string) => ({ userId: uid })),
+          },
+        } : {}),
       },
     });
 

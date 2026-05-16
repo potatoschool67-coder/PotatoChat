@@ -1,20 +1,42 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Lock, Globe } from 'lucide-react';
+
+interface Member {
+  id: string;
+  username: string;
+  avatar?: string | null;
+}
 
 interface ChannelModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateChannel: (name: string) => Promise<void>;
+  onCreateChannel: (name: string, isPrivate?: boolean, allowedUserIds?: string[]) => Promise<void>;
+  members: Member[];
+  currentUserId: string;
 }
 
-export default function ChannelModal({ isOpen, onClose, onCreateChannel }: ChannelModalProps) {
+export default function ChannelModal({ isOpen, onClose, onCreateChannel, members, currentUserId }: ChannelModalProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   if (!isOpen) return null;
+
+  const toggleMember = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +44,14 @@ export default function ChannelModal({ isOpen, onClose, onCreateChannel }: Chann
     setIsLoading(true);
 
     try {
-      await onCreateChannel(input);
+      await onCreateChannel(
+        input,
+        isPrivate || undefined,
+        isPrivate ? Array.from(selectedIds) : undefined
+      );
       setInput('');
+      setIsPrivate(false);
+      setSelectedIds(new Set());
       onClose();
     } catch (err: any) {
       setError(err.message || 'An error occurred. Please try again.');
@@ -31,6 +59,8 @@ export default function ChannelModal({ isOpen, onClose, onCreateChannel }: Chann
       setIsLoading(false);
     }
   };
+
+  const otherMembers = members.filter(m => m.id !== currentUserId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -54,6 +84,52 @@ export default function ChannelModal({ isOpen, onClose, onCreateChannel }: Chann
               required
             />
           </div>
+
+          <div className="flex items-center gap-3 p-3 bg-[#2B2D31] rounded-lg">
+            <button
+              type="button"
+              onClick={() => setIsPrivate(!isPrivate)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-all ${isPrivate ? 'bg-[#5865F2] text-white' : 'bg-[#1E1F22] text-gray-400'}`}
+            >
+              {isPrivate ? <Lock size={14} /> : <Globe size={14} />}
+              {isPrivate ? 'Private' : 'Public'}
+            </button>
+            <span className="text-sm text-gray-400">
+              {isPrivate ? 'Only selected members can view' : 'Everyone can view'}
+            </span>
+          </div>
+
+          {isPrivate && (
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase mb-2 block">Select Members</label>
+              <div className="max-h-[200px] overflow-y-auto space-y-1 bg-[#1E1F22] rounded-lg p-2">
+                {otherMembers.map(member => (
+                  <label
+                    key={member.id}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${selectedIds.has(member.id) ? 'bg-[#5865F2]/20' : 'hover:bg-[#2B2D31]'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(member.id)}
+                      onChange={() => toggleMember(member.id)}
+                      className="accent-[#5865F2]"
+                    />
+                    <div className="w-6 h-6 rounded-full bg-[#5865F2] flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0">
+                      {member.avatar ? (
+                        <img src={member.avatar} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        member.username.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-300">{member.username}</span>
+                  </label>
+                ))}
+                {otherMembers.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center py-2">No other members</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
