@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut, MoreHorizontal, User } from 'lucide-react';
+import { Send, MessageSquare, ArrowLeft, Trash2, Settings, LogOut, MoreHorizontal, User, Reply } from 'lucide-react';
 import Avatar from '@/components/utils/Avatar';
 import Linkify from '@/components/utils/Linkify';
 import SettingsModal from '@/components/modals/SettingsModal';
 import UserContextMenu from '@/components/chat/UserContextMenu';
 import UserProfileModal from '@/components/modals/UserProfileModal';
+import ReplyPreview from '@/components/chat/ReplyPreview';
+import RepliedToBar from '@/components/chat/RepliedToBar';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import { useAuth } from '@/context/AuthContext';
 import { ensureAudioContext, unlockAudio } from '@/lib/audio';
@@ -19,8 +21,15 @@ import GifImage from '@/components/utils/GifImage';
 interface Message {
   id: string;
   content: string;
+  isEncrypted?: boolean;
   user: { id: string; username: string; avatar: string | null };
   createdAt: string;
+  replyTo?: {
+    id: string;
+    content: string;
+    userId: string;
+    user: { username: string };
+  } | null;
 }
 
 interface Conversation {
@@ -52,8 +61,18 @@ export default function DMPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ userId: string; username: string; x: number; y: number } | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [otherUnreadCount, setOtherUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<Record<string, boolean>>({});
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+  }, [input]);
   const [isSending, setIsSending] = useState(false);
   
 const handleInputChange = (value: string) => {
@@ -262,8 +281,7 @@ const handleInputChange = (value: string) => {
     }
   }
 
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSend() {
     const canSend = (input.trim() || imageUrl) && user && !isSending;
     if (!canSend) return;
     
@@ -391,15 +409,21 @@ const handleInputChange = (value: string) => {
     const res = await fetch('/api/messages/dm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: messageContent, recipientId: currentUserId }),
+      body: JSON.stringify({ content: messageContent, recipientId: currentUserId, replyToId: replyingTo?.id || undefined }),
     });
 
     if (res.ok) {
       setInput('');
       setImageUrl(null);
+      setReplyingTo(null);
       fetchMessages();
     }
     setIsSending(false);
+  }
+
+  async function sendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    await handleSend();
   }
 
   const deleteMessage = async (messageId: string) => {
@@ -530,7 +554,7 @@ const handleInputChange = (value: string) => {
           )}
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4" onClick={() => {
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4" onClick={() => {
             // Mark only this conversation as read when clicking inside messages area
             const savedLastRead = localStorage.getItem('lastReadDMs');
             const lastRead = savedLastRead ? JSON.parse(savedLastRead) : {};
@@ -543,7 +567,7 @@ const handleInputChange = (value: string) => {
             });
           }}>
           {messages.map((msg) => (
-            <div key={msg.id} className="flex gap-4 items-start">
+            <div key={msg.id} id={`msg-${msg.id}`} className="flex gap-4 items-start group">
               <button
                 onClick={(e) => {
                   setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
@@ -551,8 +575,8 @@ const handleInputChange = (value: string) => {
               >
                 <Avatar src={msg.user.avatar} name={msg.user.username} size={40} />
               </button>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
                   <button
                     onClick={(e) => {
                       setContextMenu({ userId: msg.user.id, username: msg.user.username, x: e.clientX, y: e.clientY });
@@ -564,6 +588,13 @@ const handleInputChange = (value: string) => {
                   <span className="text-xs text-gray-400">
                     {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
+                  <button
+                    onClick={() => setReplyingTo(msg)}
+                    className="text-gray-400 hover:text-white p-0.5 rounded"
+                    title="Reply"
+                  >
+                    <Reply size={14} />
+                  </button>
                   {msg.user.id === user?.id && (
                     <div className="relative">
                       <button
@@ -585,7 +616,15 @@ const handleInputChange = (value: string) => {
                     </div>
                   )}
                 </div>
-                <p className="text-gray-300">
+                {msg.replyTo && (
+                  <RepliedToBar
+                    username={msg.replyTo.user.username}
+                    content={msg.replyTo.content}
+                    isEncrypted={true}
+                    replyToId={msg.replyTo.id}
+                  />
+                )}
+                <p className="text-gray-300 break-words whitespace-pre-line">
                   <Linkify text={(msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content} />
                 </p>
                 {(() => {
@@ -627,9 +666,17 @@ const handleInputChange = (value: string) => {
               return updated;
             });
           }}>
+          {replyingTo && (
+            <ReplyPreview
+              username={replyingTo.user?.username || 'User'}
+              content={(replyingTo as any).isEncrypted ? decodeMessage(replyingTo.content) : replyingTo.content}
+              onCancel={() => setReplyingTo(null)}
+            />
+          )}
           <ImagePreview imageUrl={imageUrl} onRemove={() => setImageUrl(null)} />
           <div className="flex items-center gap-2 bg-[#383A40] rounded-lg px-4 py-2">
-            <input
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={(e) => {
@@ -638,13 +685,13 @@ const handleInputChange = (value: string) => {
                   const hasMention = input.includes('@');
                   if (!hasCommand && !hasMention) {
                     e.preventDefault();
-                    const form = e.currentTarget.form;
-                    if (form) form.requestSubmit();
+                    handleSend();
                   }
                 }
               }}
               placeholder={`Message ${otherUser?.username || 'user'}`}
-              className="flex-1 bg-transparent outline-none text-gray-200 py-2"
+              className="flex-1 bg-transparent outline-none text-gray-200 py-2 resize-none max-h-[200px] overflow-y-auto"
+              rows={1}
             />
             <button type="submit" className="text-gray-400 hover:text-white">
               <Send size={20} />

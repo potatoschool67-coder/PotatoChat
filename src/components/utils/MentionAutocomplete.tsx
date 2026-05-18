@@ -11,7 +11,7 @@ interface Member {
 
 interface MentionAutocompleteProps {
   inputValue: string;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>;
   onInsert: (text: string) => void;
   serverId?: string;
 }

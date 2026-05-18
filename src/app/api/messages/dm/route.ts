@@ -36,6 +36,14 @@ export async function GET(req: Request) {
         user: {
           select: { id: true, username: true, avatar: true },
         },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            userId: true,
+            user: { select: { username: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -59,7 +67,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { content, recipientId } = await req.json();
+    const { content, recipientId, replyToId } = await req.json();
 
     if (!content || !recipientId) {
       return NextResponse.json({ error: 'Content and recipient are required' }, { status: 400 });
@@ -73,6 +81,7 @@ export async function POST(req: Request) {
         isEncrypted: true,
         userId,
         recipientId,
+        replyToId: replyToId || undefined,
       },
       include: {
         user: {

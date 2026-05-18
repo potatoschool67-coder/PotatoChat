@@ -83,6 +83,14 @@ export async function GET(req: Request) {
             } : false,
           },
         },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            userId: true,
+            user: { select: { username: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -122,7 +130,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    const { content, channelId, channelName } = await req.json();
+    const { content, channelId, channelName, replyToId } = await req.json();
 
     if (!content) {
       return NextResponse.json({ error: 'Content is required' }, { status: 400 });
@@ -157,6 +165,7 @@ export async function POST(req: Request) {
         isEncrypted: true,
         userId,
         channelId: finalChannelId,
+        replyToId: replyToId || undefined,
       },
     });
 

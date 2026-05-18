@@ -16,7 +16,7 @@ export default function Linkify({ text }: { text: string }) {
                 href={part} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-blue-400 hover:underline"
+                className="text-blue-400 hover:underline break-all"
               >
                 {part}
               </a>
@@ -28,7 +28,7 @@ export default function Linkify({ text }: { text: string }) {
                 href={`https://${part}`} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-blue-400 hover:underline"
+                className="text-blue-400 hover:underline break-all"
               >
                 {part}
               </a>

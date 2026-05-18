@@ -31,7 +31,7 @@ export default function ChannelPage() {
   }, [serverId, channelId]);
 
   return (
-    <div className="flex-1 h-full">
+    <div className="flex-1 h-full min-w-0">
       <ChatWindow channelId={channelId} serverId={serverId} channelName={channelName} />
     </div>
   );

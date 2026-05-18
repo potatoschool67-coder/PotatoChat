@@ -78,6 +78,10 @@ model Message {
   updatedAt   DateTime  @updatedAt
 
   poll        Poll?
+
+  replyToId   String?
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[] @relation("MessageReplies")
 }
 
 model Relationship {

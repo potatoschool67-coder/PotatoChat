@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, MoreHorizontal, Plus, ImageIcon, BarChart3 } from 'lucide-react';
+import { Send, Trash2, MoreHorizontal, Plus, ImageIcon, BarChart3, Reply } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import CommandAutocomplete from '@/components/utils/CommandAutocomplete';
 import MentionAutocomplete from '@/components/utils/MentionAutocomplete';
@@ -18,6 +18,8 @@ import PollMessage from './PollMessage';
 import PhotoUploadModal from './PhotoUploadModal';
 import UserContextMenu from './UserContextMenu';
 import UserProfileModal from '@/components/modals/UserProfileModal';
+import ReplyPreview from './ReplyPreview';
+import RepliedToBar from './RepliedToBar';
 
 interface PollOptionData {
   id: string;
@@ -35,9 +37,16 @@ interface PollData {
 interface Message {
   id: string;
   content: string;
+  isEncrypted?: boolean;
   user: { username: string; avatar: string | null; id?: string };
   createdAt: string;
   poll?: PollData | null;
+  replyTo?: {
+    id: string;
+    content: string;
+    userId: string;
+    user: { username: string };
+  } | null;
 }
 
 export default function ChatWindow({ channelId, serverId, channelName = 'general' }: { channelId: string; serverId: string; channelName?: string }) {
@@ -54,8 +63,17 @@ export default function ChatWindow({ channelId, serverId, channelName = 'general
   const [userRole, setUserRole] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ userId: string; username: string; x: number; y: number } | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const processedRef = useRef(false);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    }
+  }, [input]);
 
   useEffect(() => {
     if (!serverId || !currentUser?.id) return;
@@ -240,8 +258,7 @@ const handleInputChange = (value: string) => {
     }
   }
 
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSend() {
     const canSend = (input.trim() || imageUrl) && currentUser && !isSending;
     if (!canSend) return;
     
@@ -351,15 +368,21 @@ const handleInputChange = (value: string) => {
     const res = await fetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: messageContent, channelId }),
+      body: JSON.stringify({ content: messageContent, channelId, replyToId: replyingTo?.id || undefined }),
     });
 
     if (res.ok) {
       setInput('');
       setImageUrl(null);
+      setReplyingTo(null);
       setTimeout(fetchMessages, 500);
     }
     setIsSending(false);
+  }
+
+  async function sendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    await handleSend();
   }
 
   const deleteMessage = async (messageId: string) => {
@@ -378,16 +401,16 @@ const handleInputChange = (value: string) => {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0">
       <div className="px-4 py-2 bg-[#313338] border-b border-[#1f1f22]">
         <span className="text-xs text-gray-400">
           Messages update every 2 seconds
         </span>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 min-w-0">
         {messages.map((msg) => (
-          <div key={msg.id} className="flex gap-4 items-start">
+          <div key={msg.id} id={`msg-${msg.id}`} className="flex gap-4 items-start group w-full">
             <button
               onClick={(e) => {
                 if (msg.user?.id) {
@@ -397,8 +420,8 @@ const handleInputChange = (value: string) => {
             >
               <Avatar src={msg.user?.avatar} name={msg.user?.username || 'User'} size={40} />
             </button>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={(e) => {
                     if (msg.user?.id) {
@@ -412,6 +435,13 @@ const handleInputChange = (value: string) => {
                 <span className="text-xs text-gray-400">
                   {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                <button
+                  onClick={() => setReplyingTo(msg)}
+                  className="text-gray-400 hover:text-white p-0.5 rounded"
+                  title="Reply"
+                >
+                  <Reply size={14} />
+                </button>
                 {msg.user?.id === currentUser?.id && (
                   <div className="relative">
                     <button
@@ -433,13 +463,21 @@ const handleInputChange = (value: string) => {
                   </div>
                 )}
               </div>
+              {msg.replyTo && (
+                <RepliedToBar
+                  username={msg.replyTo.user.username}
+                  content={msg.replyTo.content}
+                  isEncrypted={true}
+                  replyToId={msg.replyTo.id}
+                />
+              )}
               {msg.poll ? (
                 <div className="mt-1">
                   <PollMessage poll={msg.poll} pollId={msg.poll.id} />
                 </div>
               ) : (
                 <>
-                  <p className="text-gray-300">
+                  <p className="text-gray-300 break-words whitespace-pre-line">
                       {(() => {
                         const rawContent = (msg as any).isEncrypted ? decodeMessage(msg.content) : msg.content;
                         const images = extractImages(rawContent);
@@ -485,7 +523,14 @@ const handleInputChange = (value: string) => {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={sendMessage} className="p-4 relative">
+      <form onSubmit={sendMessage} className="p-4 relative min-w-0">
+        {replyingTo && (
+          <ReplyPreview
+            username={replyingTo.user?.username || 'User'}
+            content={(replyingTo as any).isEncrypted ? decodeMessage(replyingTo.content) : replyingTo.content}
+            onCancel={() => setReplyingTo(null)}
+          />
+        )}
         <ImagePreview imageUrl={imageUrl} onRemove={() => setImageUrl(null)} />
         <CommandAutocomplete onSelect={(cmd) => setInput(cmd)} username={currentUser?.username} onShowChange={setShowCommandAutocomplete} />
         <MentionAutocomplete inputValue={input} inputRef={inputRef} onInsert={setInput} serverId={serverId} />
@@ -523,19 +568,19 @@ const handleInputChange = (value: string) => {
               </div>
             )}
           </div>
-          <input
+          <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !showCommandAutocomplete) {
                 e.preventDefault();
-                const form = e.currentTarget.form;
-                if (form) form.requestSubmit();
+                handleSend();
               }
             }}
             placeholder={`Message #${channelName}`}
-            className="flex-1 bg-transparent outline-none text-gray-200 py-2"
+            className="flex-1 bg-transparent outline-none text-gray-200 py-2 resize-none max-h-[200px] overflow-y-auto"
+            rows={1}
           />
           <button type="submit" className="text-gray-400 hover:text-white">
             <Send size={20} />

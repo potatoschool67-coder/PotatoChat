@@ -858,8 +858,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex bg-[#313338]">
-        <div className="flex-1 flex flex-col">
+      <main className="flex-1 flex bg-[#313338] min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
           {children}
         </div>
         
